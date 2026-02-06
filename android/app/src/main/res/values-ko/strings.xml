@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">지만바</string>
+    <string name="phone_locked_message">폰이 잠겼습니다</string>
+    <string name="emergency_unlock">긴급 잠금 해제</string>
+    <string name="emergency_unlocked_title">긴급 해제됨</string>
+    <string name="emergency_unlocked_msg">사용자에 의해 폰 잠금이 해제되었습니다.</string>
+    <string name="app_lock_notification_title">그만바 - 폰 잠금</string>
+    <string name="app_lock_notification_msg">타이머 종료 시 자동으로 해제됩니다</string>
+    <string name="app_locked_suffix"> 잠김</string>
+    <string name="available_after_suffix">분 후 사용 가능</string>
+    <string name="emergency_unlock_hint">지금 사용하려면 긴급 해제를 하세요.</string>
+    <string name="notification_channel_name">앱 차단 서비스</string>
+    <string name="notification_channel_desc">앱이 차단되는 동안 표시됨</string>
+    <string name="notification_blocking_apps">앱 차단 중...</string>
+    <string name="less_than_one_minute">1분 미만 남음</string>
+    <string name="unlock_complete_title">잠금 해제 완료</string>
+    <string name="unlock_complete_msg_format">%1$s 등 %2$d개 앱의 잠금이 해제되었습니다.</string>
+</resources>

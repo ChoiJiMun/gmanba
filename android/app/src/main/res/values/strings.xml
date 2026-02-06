@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Gmanba</string>
+    <string name="phone_locked_message">Phone is locked</string>
+    <string name="emergency_unlock">Emergency Unlock</string>
+    <string name="emergency_unlocked_title">Emergency Unlocked</string>
+    <string name="emergency_unlocked_msg">Phone lock unlocked by user.</string>
+    <string name="app_lock_notification_title">Gmanba - Phone Lock</string>
+    <string name="app_lock_notification_msg">Will unlock automatically when timer ends</string>
+    <string name="app_locked_suffix"> Locked</string>
+    <string name="available_after_suffix"> min remaining</string>
+    <string name="emergency_unlock_hint">Tap Emergency Unlock to use now.</string>
+    <string name="notification_channel_name">App Blocking Service</string>
+    <string name="notification_channel_desc">Shown while apps are being blocked</string>
+    <string name="notification_blocking_apps">Blocking apps...</string>
+    <string name="less_than_one_minute">Less than 1 min remaining</string>
+    <string name="unlock_complete_title">Unlock Complete</string>
+    <string name="unlock_complete_msg_format">%1$s and %2$d other apps unlocked.</string>
+</resources>

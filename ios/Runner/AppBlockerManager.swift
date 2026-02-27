@@ -73,20 +73,18 @@ class AppBlockerManager: ObservableObject {
     
     func loadBlockedApps() async {
         print("Loading blocked apps...")
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
+        
+        // Use MainActor to ensure UI updates happen on the main thread
+        await MainActor.run {
             if let data = UserDefaults.standard.data(forKey: "blockedApps") {
                 do {
                     let decoded = try JSONDecoder().decode(FamilyActivitySelection.self, from: data)
                     print("Loaded blocked apps from storage: \(decoded.applicationTokens.count) apps")
                     
-                    DispatchQueue.main.async {
-                        self.selectedApps = decoded
-                        // self.checkAuthorizationStatus() // Startup Crash Fix: UI block prevention
-                        // self.blockSelectedApps(save: false) // Startup crash fix: Do not re-apply shield on load
-                        print("Blocked apps loaded into memory.")
-                    }
+                    self.selectedApps = decoded
+                    self.checkAuthorizationStatus()
+                    // self.blockSelectedApps(save: false) // REMOVED: Do not apply shield on load to prevent startup crash
+                    print("Blocked apps loaded into memory. Waiting for explicit block command.")
                 } catch {
                     print("Error decoding blocked apps: \(error)")
                 }
@@ -94,9 +92,7 @@ class AppBlockerManager: ObservableObject {
                 // 앱 삭제 후 재설치 시, UserDefaults는 비어있지만 시스템 Shield 설정은 남아있을 수 있음 (Ghost Setting).
                 // 따라서 저장된 설정이 없으면 명시적으로 Shield를 초기화하여 좀비 차단을 해제해야 함.
                 print("No saved blocked apps found. Clearing potential ghost shields.")
-                DispatchQueue.main.async {
-                    self.unblockAllApps()
-                }
+                self.unblockAllApps()
             }
         }
     }

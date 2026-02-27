@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -17,21 +16,21 @@ import 'l10n/app_localizations.dart';
 class AppConstants {
   // App Package Name
   static const String appPackageName = 'kr.jamgltime.app';
-  
+
   // Timer Related
   static const Duration timerInterval = Duration(seconds: 1);
   static const Duration serviceStartDelay = Duration(milliseconds: 500);
-  
+
   // Time Related Constants
-  static const int minLockDurationMinutes = 5;
+  static const int minLockDurationMinutes = 1;
   static const int maxLockDurationMinutes = 1440; // 24 hours
   static const int defaultScheduledHour = 9;
   static const int defaultScheduledMinute = 0;
   static const int defaultScheduledDuration = 30;
-  
+
   // Scheduled Lock Check Window (minutes)
   static const int scheduledLockCheckWindowMinutes = 60;
-  
+
   // Essential System Packages
   static const List<String> essentialSystemPackages = [
     'com.android.systemui',
@@ -40,12 +39,31 @@ class AppConstants {
     'com.android.permissioncontroller',
     'com.google.android.gms',
   ];
-  
+
   // Quick Time Selection Options (minutes)
-  static const List<int> quickTimeOptions = [10, 30, 60, 120, 180, 240, 360, 720, 1440];
-  
+  static const List<int> quickTimeOptions = [
+    10,
+    30,
+    60,
+    120,
+    180,
+    240,
+    360,
+    720,
+    1440,
+  ];
+
   // Scheduled Lock Quick Time Options (minutes)
-  static const List<int> quickScheduleDurationOptions = [30, 60, 120, 180, 240, 360, 720, 1440];
+  static const List<int> quickScheduleDurationOptions = [
+    30,
+    60,
+    120,
+    180,
+    240,
+    360,
+    720,
+    1440,
+  ];
 
   // Special Package Name for Phone Lock
   static const String phoneLockPackageName = 'PHONE_LOCK_ALL';
@@ -69,10 +87,27 @@ class AppUtils {
   // Korean Initial Consonant Extraction (for search)
   static String getChosung(String text) {
     const chosungList = [
-      'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ',
-      'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+      'ㄱ',
+      'ㄲ',
+      'ㄴ',
+      'ㄷ',
+      'ㄸ',
+      'ㄹ',
+      'ㅁ',
+      'ㅂ',
+      'ㅃ',
+      'ㅅ',
+      'ㅆ',
+      'ㅇ',
+      'ㅈ',
+      'ㅉ',
+      'ㅊ',
+      'ㅋ',
+      'ㅌ',
+      'ㅍ',
+      'ㅎ',
     ];
-    
+
     String result = '';
     for (int i = 0; i < text.length; i++) {
       final code = text.codeUnitAt(i);
@@ -85,25 +120,26 @@ class AppUtils {
     }
     return result.toLowerCase();
   }
-  
+
   // App Filtering (Exclude System Apps & Self)
   static List<dynamic> filterApps(List<dynamic> apps) {
     return apps.where((app) {
       final packageName = app['packageName'] as String? ?? '';
       final appName = app['name'] as String? ?? '';
-      
+
       // Exclude Gmanba App
       if (packageName == AppConstants.appPackageName) return false;
-      
+
       // Exclude Android Switch (User Request)
       if (appName == 'Android Switch') return false;
-      
+
       // Exclude Core System Apps
       if (packageName.startsWith('android.')) return false;
-      
+
       // Exclude Essential Android System Packages
-      if (AppConstants.essentialSystemPackages.contains(packageName)) return false;
-      
+      if (AppConstants.essentialSystemPackages.contains(packageName))
+        return false;
+
       return true;
     }).toList();
   }
@@ -121,6 +157,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       onGenerateTitle: (context) => AppLocalizations.of(context)!.appTitle,
       localizationsDelegates: const [
         AppLocalizations.delegate,
@@ -159,23 +196,27 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   List<LockedApp> lockedApps = [];
   List<ScheduledLock> scheduledLocks = [];
   Timer? _timer;
-  int _selectedIndex = 0;  // 0: Now Lock, 1: Schedule Lock
-  
+  int _selectedIndex = 0; // 0: Now Lock, 1: Schedule Lock
+
   // AdMob Banner
   BannerAd? _bannerAd;
   bool _isBannerAdReady = false;
 
-  bool _isLoading = true; // Add loading state
+  bool _isLoading = true;
+  String _loadingStatus = 'Initializing...'; // 로딩 상태 표시용
+  String? _initError; // 초기화 에러 표시용
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // Register App Lifecycle Observer
+    WidgetsBinding.instance.addObserver(
+      this,
+    ); // Register App Lifecycle Observer
     platform = const MethodChannel('com.jimoon.jamgltime/app_blocker');
-    
+
     // Load Banner Ad
     _loadBannerAd();
-    
+
     // Start Initialization
     _init();
   }
@@ -183,40 +224,78 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Future<void> _init() async {
     print('=== App Initialization Started ===');
     try {
+      if (!mounted) return;
+      setState(() => _loadingStatus = 'Loading settings...');
+
       // 1. Load Data
-      await _loadLockedApps();
-      await _loadScheduledLocks();
-      
-      // Delay initialization to prevent native crashes on cold start (especially after force quit)
-      await Future.delayed(const Duration(milliseconds: 1000));
+      // Use timeout to prevent hanging forever
+      await _loadLockedApps().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          print('Timeout loading locked apps');
+        },
+      );
+      await _loadScheduledLocks().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          print('Timeout loading scheduled locks');
+        },
+      );
+
+      // Delay initialization reduced to improve startup speed
+      await Future.delayed(const Duration(milliseconds: 200));
 
       // 2. iOS Restore & Sync
       if (Platform.isIOS) {
+        if (!mounted) return;
+        setState(() => _loadingStatus = 'Syncing with iOS...');
+
         try {
-          // Request Authorization removed from startup to prevent crashes.
-          // It will be requested when user tries to add a lock.
-          
-          await platform.invokeMethod('restoreBlockedApps');
+          // Restore blocked apps asynchronously with a safe delay
+          // This ensures UI is ready and prevents startup race conditions
+          // Increased to 2 seconds based on crash reports
+          // [Fix] Run entirely detached from await chain to prevent blocking init
+          Future.delayed(const Duration(milliseconds: 2000), () async {
+            print('iOS: Restoring blocked apps asynchronously...');
+            try {
+              await platform.invokeMethod('restoreBlockedApps');
+              // Re-apply block if needed (Double assurance)
+              if (lockedApps.isNotEmpty) {
+                print('iOS: Re-applying active blocks...');
+                await platform.invokeMethod('blockApps');
+              }
+            } catch (e) {
+              print('Error during delayed restore: $e');
+            }
+          });
         } catch (e) {
           print('Error restoring/authorizing iOS: $e');
         }
       }
-      
+
       // 3. Logic Checks
+      if (!mounted) return;
+      setState(() => _loadingStatus = 'Checking schedules...');
+
       await _cleanupExpiredApps();
       await _syncServiceOnStartup();
       _checkMissedScheduledLocks();
-      
+
       // 4. Timer Start
       _startTimer();
-      
+
       // 5. Post-Frame Tasks (Permissions)
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _checkAndShowPermissionDialog();
       });
-      
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Initialization Error: $e');
+      print(stackTrace);
+      if (mounted) {
+        setState(() {
+          _initError = 'App Init Error: $e\n\n$stackTrace';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -229,7 +308,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // Unregister App Lifecycle Observer
+    WidgetsBinding.instance.removeObserver(
+      this,
+    ); // Unregister App Lifecycle Observer
     _timer?.cancel();
     _bannerAd?.dispose();
     super.dispose();
@@ -262,9 +343,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     // Check state when app resumes (Foreground)
     if (state == AppLifecycleState.resumed) {
       print('=== App Resumed: State Check & Scheduled Lock Check ===');
-      _cleanupExpiredApps();      // Unlock Expired Locks
+      _cleanupExpiredApps(); // Unlock Expired Locks
       _checkMissedScheduledLocks(); // Check Missed Scheduled Locks
-      _syncServiceOnStartup();    // Sync Service State
+      _syncServiceOnStartup(); // Sync Service State
     }
   }
 
@@ -274,14 +355,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     final prefs = await SharedPreferences.getInstance();
     final isFirstRun = !prefs.containsKey('permissions_checked');
-    
-    if (isFirstRun) {
-      final notifGranted = await Permission.notification.isGranted;
-      if (!notifGranted) {
-        await Permission.notification.request();
-      }
-    }
-    
+
     // Show permission dialog on first run or if essential permissions are missing
     if (isFirstRun || !(await _hasAllRequiredPermissions())) {
       if (mounted) {
@@ -289,7 +363,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       }
     }
   }
-  
+
   Future<bool> _hasAllRequiredPermissions() async {
     if (Platform.isIOS) return true;
     final overlayGranted = await Permission.systemAlertWindow.isGranted;
@@ -297,7 +371,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final notificationGranted = await Permission.notification.isGranted;
     return overlayGranted && alarmGranted && notificationGranted;
   }
-  
+
   void _showPermissionDialog() {
     showDialog(
       context: context,
@@ -305,7 +379,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       builder: (context) => const PermissionDialog(),
     );
   }
-  
+
   Future<void> _requestPermissions() async {
     final permissions = [
       Permission.scheduleExactAlarm,
@@ -319,7 +393,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _startPhoneLockWithDuration(int minutes, {bool strictMode = false}) async {
+  Future<void> _startPhoneLockWithDuration(
+    int minutes, {
+    bool strictMode = false,
+  }) async {
     try {
       await platform.invokeMethod('startPhoneLock', {
         'duration': minutes,
@@ -328,9 +405,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(strictMode 
-                ? '🔒 Strict Mode Activated! (Settings blocked & Uninstall disabled)' 
-                : 'Phone Lock started. It will unlock automatically when timer ends.'),
+            content: Text(
+              strictMode
+                  ? '🔒 Strict Mode Activated! (Settings blocked & Uninstall disabled)'
+                  : 'Phone Lock started. It will unlock automatically when timer ends.',
+            ),
             backgroundColor: strictMode ? Colors.red.shade900 : null,
           ),
         );
@@ -338,9 +417,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     } catch (e) {
       print('Phone Lock Error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     }
   }
@@ -383,43 +462,63 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       final currentMinutes = now.hour * 60 + now.minute;
       final startMinutes = newLock.hour * 60 + newLock.minute;
       final endMinutes = startMinutes + newLock.durationMinutes;
-      
-      if (newLock.weekdays.contains(now.weekday) && 
-          currentMinutes >= startMinutes && 
+
+      if (newLock.weekdays.contains(now.weekday) &&
+          currentMinutes >= startMinutes &&
           currentMinutes < endMinutes) {
-          
-          shouldProceed = await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text('⚠️ Immediate Lock Warning', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-              content: const Text(
-                'The scheduled time includes the current time.\nClicking Confirm will start the lock immediately.\nIf you cancel, the schedule will not be saved.',
-                style: TextStyle(color: Colors.black87),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+        shouldProceed =
+            await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                backgroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                title: const Text(
+                  '⚠️ Immediate Lock Warning',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
                   ),
-                  child: const Text('Confirm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
-              ],
-            ),
-          ) ?? false;
+                content: const Text(
+                  'The scheduled time includes the current time.\nClicking Confirm will start the lock immediately.\nIf you cancel, the schedule will not be saved.',
+                  style: TextStyle(color: Colors.black87),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Confirm',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
       }
     }
-    
+
     if (!shouldProceed) {
-       if (mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Phone Lock schedule cancelled.'),
@@ -439,7 +538,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (Platform.isAndroid) {
       await _scheduleAlarm(newLock);
     }
-    
+
     // iOS relies on Timer (no AlarmManager)
 
     await _saveScheduledLocks();
@@ -450,11 +549,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Phone Lock scheduled. (Starts at ${newLock.hour}:${newLock.minute.toString().padLeft(2, '0')})'),
+          content: Text(
+            'Phone Lock scheduled. (Starts at ${newLock.hour}:${newLock.minute.toString().padLeft(2, '0')})',
+          ),
           backgroundColor: Colors.grey.shade800,
         ),
       );
-      
+
       // Switch to Schedule tab to verify
       setState(() {
         _selectedIndex = 1;
@@ -468,13 +569,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       // 시작 시에는 권한을 요청하지 않고 그냥 복구
       if (lockedApps.isNotEmpty) {
         print('저장된 잠금 목록 복구: ${lockedApps.length}개 앱');
-        
+
         // iOS: Skip blocking on startup to avoid re-application/crash loops.
         // The system persists the shield. Native restoreBlockedApps handles loading state.
         if (Platform.isAndroid) {
           await _updateBlockingService();
         } else {
-          print('iOS: Skipping redundant block application on startup');
+          print(
+            'iOS: Skipping redundant block application on startup (Handled by delayed restore)',
+          );
         }
       }
     } catch (e) {
@@ -482,27 +585,29 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
     print('서비스 동기화 완료: ${lockedApps.length}개 앱 차단 중');
   }
-  
+
   Future<void> _cleanupExpiredApps() async {
     final beforeCount = lockedApps.length;
-    
+
     // Find expired apps
     final expiredApps = lockedApps
         .where((app) => app.unlockTime.isBefore(DateTime.now()))
         .toList();
-    
+
     setState(() {
       lockedApps.removeWhere((app) => app.unlockTime.isBefore(DateTime.now()));
     });
-    
+
     // If expired apps exist, save and update service
     if (lockedApps.length != beforeCount) {
       final unlockedAppNames = expiredApps.map((app) => app.name).join(', ');
-      print('App Restart: ${beforeCount - lockedApps.length} apps auto-unlocked: $unlockedAppNames');
-      
+      print(
+        'App Restart: ${beforeCount - lockedApps.length} apps auto-unlocked: $unlockedAppNames',
+      );
+
       await _saveLockedApps();
       await _updateBlockingService();
-      
+
       // Popup notification
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -516,29 +621,28 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     }
   }
 
-
   void _startTimer() {
     DateTime? lastScheduledCheck;
-    
+
     _timer = Timer.periodic(AppConstants.timerInterval, (_) async {
       if (!mounted) return;
-      
+
       final now = DateTime.now();
-      
+
       // Check scheduled locks only every minute (Performance optimization)
-      if (lastScheduledCheck == null || 
+      if (lastScheduledCheck == null ||
           now.difference(lastScheduledCheck!).inSeconds >= 60) {
         _checkMissedScheduledLocks(); // Use integrated logic
         lastScheduledCheck = now;
       }
-      
+
       final beforeCount = lockedApps.length;
-      
+
       // Find expired apps
       final expiredApps = lockedApps
           .where((app) => app.unlockTime.isBefore(now))
           .toList();
-      
+
       if (expiredApps.isNotEmpty) {
         print('=== Timer: ${expiredApps.length} apps expired ===');
         for (var app in expiredApps) {
@@ -551,16 +655,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         // No expired apps but locked apps exist, update UI every second for countdown
         setState(() {});
       }
-      
+
       // If apps removed, show notification and update service
       if (lockedApps.length != beforeCount && mounted) {
         // Unlocked app names
         final unlockedAppNames = expiredApps.map((app) => app.name).join(', ');
-        
+
         print('=== App Unlock Notification ===');
         print('Unlocked: $unlockedAppNames');
         print('Remaining: ${lockedApps.length}');
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✅ $unlockedAppNames unlocked!'),
@@ -568,55 +672,73 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             duration: const Duration(seconds: 3),
           ),
         );
-        
+
         await _saveLockedApps();
         await _updateBlockingService();
       }
     });
   }
-  
+
   Future<void> _updateBlockingService() async {
     try {
       // Check if phone lock is temporarily suppressed
       int suppressedUntilMinutes = 0;
       try {
         final prefs = await SharedPreferences.getInstance();
-        suppressedUntilMinutes = prefs.getInt('phoneLockSuppressedUntilMinutes') ?? 0;
+        suppressedUntilMinutes =
+            prefs.getInt('phoneLockSuppressedUntilMinutes') ?? 0;
       } catch (_) {}
 
       // Check if phone lock is active
-      final phoneLockIndex = lockedApps.indexWhere((app) => app.packageName == AppConstants.phoneLockPackageName);
+      final phoneLockIndex = lockedApps.indexWhere(
+        (app) => app.packageName == AppConstants.phoneLockPackageName,
+      );
       if (phoneLockIndex != -1) {
-         final phoneLockApp = lockedApps[phoneLockIndex];
-         // Skip if suppressed
-         final nowMinutes = DateTime.now().millisecondsSinceEpoch ~/ 60000;
-         if (suppressedUntilMinutes > 0 && nowMinutes < suppressedUntilMinutes) {
-           print('Phone lock suppressed - Skipping service start');
-           return;
-         }
-         final duration = phoneLockApp.unlockTime.difference(DateTime.now()).inMinutes;
-         
-         final effectiveDuration = duration < 1 ? 1 : duration;
-         
-         print('Phone lock mode active: $effectiveDuration min remaining');
-         try {
-           await platform.invokeMethod('startPhoneLock', {
-             'duration': effectiveDuration,
-             'strictMode': phoneLockApp.strictMode,
-           });
-           return; // Phone lock takes precedence
-         } catch (e) {
-           print('Phone lock service call failed: $e');
-         }
+        final phoneLockApp = lockedApps[phoneLockIndex];
+        // Skip if suppressed
+        final nowMinutes = DateTime.now().millisecondsSinceEpoch ~/ 60000;
+        if (suppressedUntilMinutes > 0 && nowMinutes < suppressedUntilMinutes) {
+          print('Phone lock suppressed - Skipping service start');
+          return;
+        }
+        final duration = phoneLockApp.unlockTime
+            .difference(DateTime.now())
+            .inMinutes;
+
+        final effectiveDuration = duration < 1 ? 1 : duration;
+
+        print('Phone lock mode active: $effectiveDuration min remaining');
+        try {
+          await platform.invokeMethod('startPhoneLock', {
+            'duration': effectiveDuration,
+            'strictMode': phoneLockApp.strictMode,
+          });
+          return; // Phone lock takes precedence
+        } catch (e) {
+          print('Phone lock service call failed: $e');
+        }
       }
 
       if (Platform.isIOS) {
-        if (lockedApps.isNotEmpty) {
-          print('iOS: Blocking active');
-          await platform.invokeMethod('blockApps');
+        final hasIosLock = lockedApps.any(
+          (app) => app.packageName == 'ios_selected_apps',
+        );
+
+        if (hasIosLock) {
+          print('iOS: Updating blocking service (calling blockApps)');
+          try {
+            await platform.invokeMethod('blockApps');
+          } catch (e) {
+            print('iOS Block Error: $e');
+          }
         } else {
-          print('iOS: Blocking inactive');
-          await platform.invokeMethod('unblockApps');
+          // [iOS Fix] Explicitly unblock if no iOS lock exists (expired)
+          print('iOS: No active locks - Unblocking all apps');
+          try {
+            await platform.invokeMethod('unblockApps');
+          } catch (e) {
+            print('iOS Unblock Error: $e');
+          }
         }
         return;
       }
@@ -624,32 +746,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       final allBlockedPackageNames = lockedApps
           .map((app) => app.packageName)
           .toList();
-      
+
       final allUnlockTimes = lockedApps
           .map((app) => app.unlockTime.millisecondsSinceEpoch.toString())
           .toList();
 
       // If any app is strict, service runs in strict mode
       final isStrictMode = lockedApps.any((app) => app.strictMode);
-      
+
       // Always update service
-      print('Updating block list: ${allBlockedPackageNames.length} apps (Strict: $isStrictMode)');
+      print(
+        'Updating block list: ${allBlockedPackageNames.length} apps (Strict: $isStrictMode)',
+      );
       print('Service manages time internally');
-      
+
       // Delay service start to fix Android 12+ timing issues
       await Future.delayed(AppConstants.serviceStartDelay);
-      
+
       try {
         await platform.invokeMethod('startBlockingService', {
           'blockedApps': allBlockedPackageNames,
           'unlockTimes': allUnlockTimes,
           'strictMode': isStrictMode,
         });
-        
+
         if (allBlockedPackageNames.isEmpty) {
           print('Block list empty - sending empty list to service');
         } else {
-          print('Block list update complete: ${allBlockedPackageNames.length} apps');
+          print(
+            'Block list update complete: ${allBlockedPackageNames.length} apps',
+          );
         }
       } catch (platformException) {
         print('Service call failed: $platformException');
@@ -657,7 +783,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('⚠️ Blocking Service Error. Please restart the app.'),
+              content: Text(
+                '⚠️ Blocking Service Error. Please restart the app.',
+              ),
               backgroundColor: Colors.orange.shade700,
               duration: const Duration(seconds: 3),
             ),
@@ -761,36 +889,43 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   int _getAlarmId(ScheduledLock lock) {
-    return ("${lock.packageName}${lock.hour}${lock.minute}").hashCode;
+    // Ensure positive ID to avoid potential issues with native AlarmManager
+    return ("${lock.packageName}${lock.hour}${lock.minute}").hashCode.abs();
   }
 
   Future<void> _scheduleAlarm(ScheduledLock lock) async {
-    print('Alarm schedule request: ${lock.appName} (${lock.hour}:${lock.minute})');
+    print(
+      'Alarm schedule request: ${lock.appName} (${lock.hour}:${lock.minute})',
+    );
     try {
-      await platform.invokeMethod('scheduleAlarm', {
-        'id': _getAlarmId(lock),
-        'hour': lock.hour,
-        'minute': lock.minute,
-        'weekdays': lock.weekdays,
-        'duration': lock.durationMinutes,
-        'packageName': lock.packageName,
-        'appName': lock.appName,
-        'strictMode': lock.strictMode,
-      });
+      // Add timeout to prevent hanging
+      await platform
+          .invokeMethod('scheduleAlarm', {
+            'id': _getAlarmId(lock),
+            'hour': lock.hour,
+            'minute': lock.minute,
+            'weekdays': lock.weekdays,
+            'duration': lock.durationMinutes,
+            'packageName': lock.packageName,
+            'appName': lock.appName,
+            'strictMode': lock.strictMode,
+          })
+          .timeout(const Duration(seconds: 5));
     } catch (e) {
       print('Alarm schedule failed: $e');
+      // Non-fatal error, proceed to save
     }
   }
 
   Future<void> _cancelAlarm(ScheduledLock lock) async {
     // iOS does not support AlarmManager, so we skip this
     if (Platform.isIOS) return;
-    
-    print('Alarm cancel request: ${lock.appName} (${lock.hour}:${lock.minute})');
+
+    print(
+      'Alarm cancel request: ${lock.appName} (${lock.hour}:${lock.minute})',
+    );
     try {
-      await platform.invokeMethod('cancelAlarm', {
-        'id': _getAlarmId(lock),
-      });
+      await platform.invokeMethod('cancelAlarm', {'id': _getAlarmId(lock)});
     } catch (e) {
       print('Alarm cancel failed: $e');
     }
@@ -806,67 +941,74 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     int suppressedUntilMinutes = 0;
     try {
       final prefs = await SharedPreferences.getInstance();
-      suppressedUntilMinutes = prefs.getInt('phoneLockSuppressedUntilMinutes') ?? 0;
+      suppressedUntilMinutes =
+          prefs.getInt('phoneLockSuppressedUntilMinutes') ?? 0;
     } catch (_) {}
 
     for (int i = 0; i < scheduledLocks.length; i++) {
       var scheduled = scheduledLocks[i];
-      
+
       if (!scheduled.isEnabled) continue;
-      
+
       if (!scheduled.weekdays.contains(currentWeekday)) continue;
-      
+
       final scheduledTimeInMinutes = scheduled.hour * 60 + scheduled.minute;
-      
+
       // Check if scheduled time has passed today (within duration window)
-      if (currentTimeInMinutes >= scheduledTimeInMinutes && 
-          currentTimeInMinutes < scheduledTimeInMinutes + scheduled.durationMinutes) {
-        
+      if (currentTimeInMinutes >= scheduledTimeInMinutes &&
+          currentTimeInMinutes <
+              scheduledTimeInMinutes + scheduled.durationMinutes) {
         // Skip if phone lock is suppressed
         if (scheduled.packageName == AppConstants.phoneLockPackageName &&
             suppressedUntilMinutes > 0 &&
-            (DateTime.now().millisecondsSinceEpoch ~/ 60000) < suppressedUntilMinutes) {
+            (DateTime.now().millisecondsSinceEpoch ~/ 60000) <
+                suppressedUntilMinutes) {
           print('Phone lock suppressed - Skipping missed lock execution');
           continue;
         }
-        
+
         // Check if already executed today
         final lastExecDate = scheduled.lastExecutedDate;
-        if (lastExecDate != null && 
-            lastExecDate.year == today.year && 
-            lastExecDate.month == today.month && 
+        if (lastExecDate != null &&
+            lastExecDate.year == today.year &&
+            lastExecDate.month == today.month &&
             lastExecDate.day == today.day) {
           // Already executed today - skip
           continue;
         }
-        
+
         // Check if already locked
-        final existingLockedApps = lockedApps.where((app) => 
-          app.packageName == scheduled.packageName
-        ).toList();
-        
-        final isAlreadyLocked = existingLockedApps.any((app) => 
-          app.unlockTime.isAfter(now)
+        final existingLockedApps = lockedApps
+            .where((app) => app.packageName == scheduled.packageName)
+            .toList();
+
+        final isAlreadyLocked = existingLockedApps.any(
+          (app) => app.unlockTime.isAfter(now),
         );
-        
+
         if (!isAlreadyLocked) {
           // Remove existing expired lock if any
           setState(() {
-            lockedApps.removeWhere((app) => 
-              app.packageName == scheduled.packageName && 
-              !app.unlockTime.isAfter(now)
+            lockedApps.removeWhere(
+              (app) =>
+                  app.packageName == scheduled.packageName &&
+                  !app.unlockTime.isAfter(now),
             );
           });
-          
+
           // Check permissions
           try {
             if (Platform.isIOS) {
-               // iOS checks handled elsewhere or not needed here
+              // iOS checks handled elsewhere or not needed here
             } else {
-              final dynamic result = await platform.invokeMethod('checkPermissions');
+              final dynamic result = await platform.invokeMethod(
+                'checkPermissions',
+              );
               final bool? hasPermissions = result as bool?;
               if (hasPermissions != true) {
-                print('Missed lock failed: No permission - ${scheduled.appName}');
+                print(
+                  'Missed lock failed: No permission - ${scheduled.appName}',
+                );
                 continue;
               }
             }
@@ -874,46 +1016,60 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             print('Permission check error: $e');
             continue;
           }
-          
+
           // Execute scheduled lock (calculate remaining time)
-          final minutesSinceScheduled = currentTimeInMinutes - scheduledTimeInMinutes;
-          final remainingMinutes = (scheduled.durationMinutes - minutesSinceScheduled).clamp(0, scheduled.durationMinutes);
-          
+          final minutesSinceScheduled =
+              currentTimeInMinutes - scheduledTimeInMinutes;
+          final remainingMinutes =
+              (scheduled.durationMinutes - minutesSinceScheduled).clamp(
+                0,
+                scheduled.durationMinutes,
+              );
+
           if (remainingMinutes > 0) {
             setState(() {
               // Double check duplicates before adding
-              final stillLocked = lockedApps.any((app) => 
-                app.packageName == scheduled.packageName && 
-                app.unlockTime.isAfter(now)
+              final stillLocked = lockedApps.any(
+                (app) =>
+                    app.packageName == scheduled.packageName &&
+                    app.unlockTime.isAfter(now),
               );
-              
+
               if (!stillLocked) {
-                lockedApps.add(LockedApp(
-                  name: scheduled.appName,
-                  icon: scheduled.packageName == AppConstants.phoneLockPackageName 
-                      ? Icons.phone_locked 
-                      : Icons.block,
-                  iconBytes: scheduled.iconBytes,
-                  unlockTime: now.add(Duration(minutes: remainingMinutes)),
-                  packageName: scheduled.packageName,
-                  strictMode: scheduled.strictMode,
-                ));
-                
+                lockedApps.add(
+                  LockedApp(
+                    name: scheduled.appName,
+                    icon:
+                        scheduled.packageName ==
+                            AppConstants.phoneLockPackageName
+                        ? Icons.phone_locked
+                        : Icons.block,
+                    iconBytes: scheduled.iconBytes,
+                    unlockTime: now.add(Duration(minutes: remainingMinutes)),
+                    packageName: scheduled.packageName,
+                    strictMode: scheduled.strictMode,
+                  ),
+                );
+
                 // Update last execution time
                 scheduledLocks[i] = scheduled.copyWith(lastExecutedDate: now);
               }
             });
-            
+
             _saveLockedApps();
             _saveScheduledLocks();
             _updateBlockingService();
-            
-            print('Missed lock executed: ${scheduled.appName} ($remainingMinutes min)');
-            
+
+            print(
+              'Missed lock executed: ${scheduled.appName} ($remainingMinutes min)',
+            );
+
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('⏰ ${scheduled.appName} Scheduled Lock Active ($remainingMinutes min)'),
+                  content: Text(
+                    '⏰ ${scheduled.appName} Scheduled Lock Active ($remainingMinutes min)',
+                  ),
                   backgroundColor: Colors.orange.shade700,
                   duration: const Duration(seconds: 3),
                 ),
@@ -926,8 +1082,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     print('Missed lock check complete');
   }
 
-
-
   Future<void> _selectAppsFirst() async {
     try {
       print('=== Step 1: Select Apps ===');
@@ -937,12 +1091,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         // 1. Request Permission
         final bool? authStatus = await platform.invokeMethod('checkAuthStatus');
         if (authStatus != true) {
-          final bool? granted = await platform.invokeMethod('requestAuthorization');
+          final bool? granted = await platform.invokeMethod(
+            'requestAuthorization',
+          );
           if (granted != true) {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Screen Time permission required. Please enable it in Settings.'),
+                content: Text(
+                  'Screen Time permission required. Please enable it in Settings.',
+                ),
                 backgroundColor: Colors.red,
               ),
             );
@@ -952,43 +1110,55 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         // 2. Open App Picker
         final dynamic picked = await platform.invokeMethod('showAppPicker');
-        if (picked is Map) {
-          final int apps = (picked['apps'] ?? 0) as int;
-          final int categories = (picked['categories'] ?? 0) as int;
-          final int domains = (picked['domains'] ?? 0) as int;
-          final int total = apps + categories + domains;
-          
+
+        if (picked != null &&
+            (picked == true ||
+                (picked is Map &&
+                    ((picked['apps'] ?? 0) +
+                            (picked['categories'] ?? 0) +
+                            (picked['domains'] ?? 0)) >
+                        0))) {
           if (!mounted) return;
 
-          final List<Map<String, String>> dummyApp = [{
-            'packageName': 'ios_selected_apps',
-            'appName': total > 0 ? 'Selected Apps (iOS) • $total' : 'Selected Apps (iOS)',
-          }];
-          _selectTimeSecond(dummyApp);
-        } else if (picked == true) {
-          // iOS security restriction: cannot retrieve selected app list.
-          // Create a dummy "iOS Blocked Apps" list to proceed.
-          if (!mounted) return;
-          final List<Map<String, String>> dummyApp = [{
-            'packageName': 'ios_selected_apps',
-            'appName': 'Selected Apps (iOS)',
-          }];
+          // [iOS Update] Use generic name without asking user
+          final int total = (picked is Map)
+              ? ((picked['apps'] ?? 0) +
+                    (picked['categories'] ?? 0) +
+                    (picked['domains'] ?? 0))
+              : 0;
+
+          final String finalName = total > 0
+              ? 'Selected Apps (iOS) • $total'
+              : 'Selected Apps (iOS)';
+
+          final List<Map<String, String>> dummyApp = [
+            {'packageName': 'ios_selected_apps', 'appName': finalName},
+          ];
           _selectTimeSecond(dummyApp);
         }
         return;
       }
 
       // Android Handling: Check Permissions
-      final bool? hasPermissions =
-          await platform.invokeMethod('checkPermissions');
+      final bool? hasPermissions = await platform.invokeMethod(
+        'checkPermissions',
+      );
       if (hasPermissions != true) {
         if (!mounted) return;
         final result = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Permission Required', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              'Permission Required',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             content: const Text(
               'Usage Access permission is required for App Lock.',
               style: TextStyle(color: Colors.black87),
@@ -996,11 +1166,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Settings', style: TextStyle(color: Colors.blue)),
+                child: const Text(
+                  'Settings',
+                  style: TextStyle(color: Colors.blue),
+                ),
               ),
             ],
           ),
@@ -1015,7 +1191,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       // Get App List
       final List<dynamic>? apps;
       try {
-        apps = await platform.invokeMethod('getInstalledApps') as List<dynamic>?;
+        apps =
+            await platform.invokeMethod('getInstalledApps') as List<dynamic>?;
       } catch (e) {
         print('Error getting app list: $e');
         if (!mounted) return;
@@ -1027,7 +1204,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         );
         return;
       }
-      
+
       if (apps == null || apps.isEmpty) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1044,24 +1221,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
       // Select Apps from Bottom Sheet
       if (!mounted) return;
-      
+
       // Extract package names of currently locked apps
       final lockedPackageNames = lockedApps
           .where((app) => app.unlockTime.isAfter(DateTime.now()))
           .map((app) => app.packageName)
           .toSet();
-      
-      final selectedApps = await showModalBottomSheet<List<Map<String, dynamic>>>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        isDismissible: true,
-        enableDrag: true,
-        builder: (context) => AppSelectorBottomSheet(
-          apps: filteredApps,
-          lockedPackageNames: lockedPackageNames,
-        ),
-      );
+
+      final selectedApps =
+          await showModalBottomSheet<List<Map<String, dynamic>>>(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            isDismissible: true,
+            enableDrag: true,
+            builder: (context) => AppSelectorBottomSheet(
+              apps: filteredApps,
+              lockedPackageNames: lockedPackageNames,
+            ),
+          );
 
       if (selectedApps == null || selectedApps.isEmpty) {
         print('App selection cancelled');
@@ -1072,36 +1250,55 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
       // Step 2: Proceed to Time Selection
       if (!mounted) return;
+
+      // Always show Time Picker (User Request)
+      // Previously, we inherited time from active locks, but user prefers setting time explicitly.
       _selectTimeSecond(selectedApps);
     } catch (e) {
       print('Error in _selectAppsFirst: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
   // Step 2: Select Time
-  Future<void> _selectTimeSecond(List<Map<String, dynamic>> selectedApps) async {
+  Future<void> _selectTimeSecond(
+    List<Map<String, dynamic>> selectedApps, {
+    int? inheritedMinutes,
+    bool? inheritedStrictMode,
+  }) async {
     try {
       print('=== Step 2: Time Selection ===');
 
-      if (!mounted) return;
-      final result = await showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (context) => _TimePickerDialog(
-          onConfirm: (mins, strict) => Navigator.pop(context, {'minutes': mins, 'strictMode': strict}),
-        ),
-      );
+      final int minutes;
+      final bool isStrictMode;
 
-      if (result == null) {
-        print('Time selection cancelled');
-        return;
+      if (inheritedMinutes != null) {
+        // Use inherited values (Adding apps to existing session)
+        minutes = inheritedMinutes;
+        isStrictMode = inheritedStrictMode ?? false;
+        print('Using inherited time: $minutes min (Strict: $isStrictMode)');
+      } else {
+        // Show Time Picker (New session)
+        if (!mounted) return;
+        final result = await showDialog<Map<String, dynamic>>(
+          context: context,
+          builder: (context) => _TimePickerDialog(
+            onConfirm: (mins, strict) =>
+                Navigator.pop(context, {'minutes': mins, 'strictMode': strict}),
+          ),
+        );
+
+        if (result == null) {
+          print('Time selection cancelled');
+          return;
+        }
+
+        minutes = result['minutes'] as int;
+        isStrictMode = result['strictMode'] as bool;
       }
-
-      final minutes = result['minutes'] as int;
-      final isStrictMode = result['strictMode'] as bool;
 
       if (minutes <= 0) {
         print('Invalid time selection');
@@ -1109,6 +1306,56 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       }
 
       print('Selected Time: $minutes min, Strict Mode: $isStrictMode');
+
+      if (!mounted) return;
+
+      // [UI] Show Confirmation Dialog before Locking
+      // Only show if we are starting a NEW session (not inheriting time)
+      if (inheritedMinutes == null) {
+        final bool confirm =
+            await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: Colors.white,
+                title: const Text(
+                  'Confirm Lock',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: Text(
+                  'Are you sure you want to lock ${selectedApps.length} apps for $minutes minutes?',
+                  style: const TextStyle(color: Colors.black87),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                    ),
+                    child: const Text(
+                      'Lock Now',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+
+        if (!confirm) {
+          print('Lock confirmation cancelled');
+          return;
+        }
+      }
 
       // Update UI after frame
       SchedulerBinding.instance.addPostFrameCallback((_) async {
@@ -1124,25 +1371,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             final name = app['appName'] as String? ?? 'Unknown App';
             final pkgName = app['packageName'] as String? ?? '';
 
+            // [iOS Fix] Always update iOS group to reflect new count/apps
+            final isIosGroup = pkgName == 'ios_selected_apps';
+
             final bool isCurrentlyLocked = lockedApps.any(
-              (existing) => existing.packageName == pkgName && existing.unlockTime.isAfter(now),
+              (existing) =>
+                  existing.packageName == pkgName &&
+                  existing.unlockTime.isAfter(now),
             );
-            if (isCurrentlyLocked) {
+
+            // Skip duplicates only if it's NOT the iOS group (which needs updating)
+            if (isCurrentlyLocked && !isIosGroup) {
               skipped.add(name);
               continue;
             }
+
+            // Remove existing entry to replace with new one (updates time and count)
             lockedApps.removeWhere(
-              (existing) => existing.packageName == pkgName && !existing.unlockTime.isAfter(now),
+              (existing) => existing.packageName == pkgName,
             );
 
-            lockedApps.add(LockedApp(
-              name: name,
-              icon: Icons.block,
-              iconBytes: app['icon'] as Uint8List?,
-              unlockTime: DateTime.now().add(Duration(minutes: minutes)),
-              packageName: pkgName,
-              strictMode: isStrictMode,
-            ));
+            lockedApps.add(
+              LockedApp(
+                name: name,
+                icon: Icons.block,
+                iconBytes: app['icon'] as Uint8List?,
+                unlockTime: DateTime.now().add(Duration(minutes: minutes)),
+                packageName: pkgName,
+                strictMode: isStrictMode,
+              ),
+            );
 
             print('- Added: $name');
             addedCount++;
@@ -1159,7 +1417,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           final strictMsg = isStrictMode ? '\n(Strict Mode Active)' : '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$addedCount apps locked for $minutes min!$strictMsg'),
+              content: Text(
+                '$addedCount apps locked for $minutes min!$strictMsg',
+              ),
               duration: const Duration(seconds: 2),
               backgroundColor: isStrictMode ? Colors.red.shade900 : null,
             ),
@@ -1167,7 +1427,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           if (skipped.isNotEmpty) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Skipped (Already Locked): ${skipped.join(', ')}'),
+                content: Text(
+                  'Skipped (Already Locked): ${skipped.join(', ')}',
+                ),
                 backgroundColor: Colors.orange.shade700,
                 duration: const Duration(seconds: 2),
               ),
@@ -1180,9 +1442,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     } catch (e) {
       print('Error in _selectTimeSecond: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -1191,15 +1453,25 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (!Platform.isIOS) {
       // Check permissions
       try {
-        final bool? hasPermissions = await platform.invokeMethod('checkPermissions');
+        final bool? hasPermissions = await platform.invokeMethod(
+          'checkPermissions',
+        );
         if (hasPermissions != true) {
           if (!mounted) return;
           final result = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text('Permission Required', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Permission Required',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               content: const Text(
                 'Usage Access permission is required to edit scheduled locks.',
                 style: TextStyle(color: Colors.black87),
@@ -1207,11 +1479,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context, false),
-                  child: Text('Cancel', style: TextStyle(color: Colors.grey.shade600)),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
                 ),
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Settings', style: TextStyle(color: Colors.blue)),
+                  child: const Text(
+                    'Settings',
+                    style: TextStyle(color: Colors.blue),
+                  ),
                 ),
               ],
             ),
@@ -1227,25 +1505,27 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         return;
       }
     }
-    
+
     final lock = scheduledLocks[index];
-    
+
     // 해당 앱(또는 폰 잠금)의 다른 예약과 겹치지 않도록 비활성화된 요일 계산
     List<int> disabledWeekdays = scheduledLocks
         .asMap()
         .entries
-        .where((entry) => 
-            entry.value.packageName == lock.packageName && 
-            entry.key != index) // 현재 수정 중인 예약은 제외
+        .where(
+          (entry) =>
+              entry.value.packageName == lock.packageName && entry.key != index,
+        ) // 현재 수정 중인 예약은 제외
         .expand((entry) => entry.value.weekdays)
         .toList();
-    
+
     // 현재 잠금 상태 확인
-    final isCurrentlyLocked = lockedApps.any((app) => 
-      app.packageName == lock.packageName && 
-      app.unlockTime.isAfter(DateTime.now())
+    final isCurrentlyLocked = lockedApps.any(
+      (app) =>
+          app.packageName == lock.packageName &&
+          app.unlockTime.isAfter(DateTime.now()),
     );
-    
+
     if (!mounted) return;
     final scheduleData = await Navigator.push<Map<String, dynamic>>(
       context,
@@ -1257,7 +1537,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           initialDuration: lock.durationMinutes,
           initialStrictMode: lock.strictMode,
           isCurrentlyLocked: isCurrentlyLocked,
-          isPhoneLockMode: lock.packageName == AppConstants.phoneLockPackageName,
+          isPhoneLockMode:
+              lock.packageName == AppConstants.phoneLockPackageName,
           disabledWeekdays: disabledWeekdays,
         ),
       ),
@@ -1271,7 +1552,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         scheduledLocks.removeAt(index);
       });
       await _saveScheduledLocks();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1290,15 +1571,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       // 비활성화 상태였다면, 설정이 변경되었는지 확인
       final oldWeekdays = Set.from(lock.weekdays);
       final newWeekdays = Set.from(scheduleData['weekdays']);
-      
-      final bool isChanged = 
+
+      final bool isChanged =
           lock.hour != scheduleData['hour'] ||
           lock.minute != scheduleData['minute'] ||
           lock.durationMinutes != scheduleData['duration'] ||
           lock.strictMode != (scheduleData['strictMode'] ?? false) ||
           oldWeekdays.length != newWeekdays.length ||
           !oldWeekdays.containsAll(newWeekdays);
-          
+
       if (isChanged) {
         shouldEnable = true; // 변경사항이 있으면 자동으로 활성화
       }
@@ -1325,44 +1606,64 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       final currentMinutes = now.hour * 60 + now.minute;
       final startMinutes = newLock.hour * 60 + newLock.minute;
       final endMinutes = startMinutes + newLock.durationMinutes;
-      
-      if (newLock.weekdays.contains(now.weekday) && 
-          currentMinutes >= startMinutes && 
+
+      if (newLock.weekdays.contains(now.weekday) &&
+          currentMinutes >= startMinutes &&
           currentMinutes < endMinutes) {
-          
-          shouldProceed = await showDialog<bool>(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text('⚠️ Immediate Lock Alert', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-              content: const Text(
-                'The modified schedule includes the current time.\nClicking Confirm will start the lock immediately.\nCancel to discard changes.',
-                style: TextStyle(color: Colors.black87),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text(AppLocalizations.of(context)!.cancel, style: TextStyle(color: Colors.grey.shade600)),
+        shouldProceed =
+            await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                backgroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                title: const Text(
+                  '⚠️ Immediate Lock Alert',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
                   ),
-                  child: Text(AppLocalizations.of(context)!.confirm, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
-              ],
-            ),
-          ) ?? false;
+                content: const Text(
+                  'The modified schedule includes the current time.\nClicking Confirm will start the lock immediately.\nCancel to discard changes.',
+                  style: TextStyle(color: Colors.black87),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: Text(
+                      AppLocalizations.of(context)!.cancel,
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.confirm,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
       }
     }
 
     if (!shouldProceed) {
-       if (mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Schedule edit cancelled.'),
@@ -1384,23 +1685,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (scheduledLocks[index].isEnabled) {
       await _scheduleAlarm(scheduledLocks[index]);
     }
-    
+
     await _saveScheduledLocks();
 
     // Check immediate lock
     if (mounted && scheduledLocks[index].isEnabled) {
-       _checkMissedScheduledLocks();
+      _checkMissedScheduledLocks();
     }
 
     if (mounted) {
       String message = isCurrentlyLocked
           ? '${lock.appName} schedule updated!\n(Current lock remains, next schedule will apply)'
           : '${lock.appName} schedule updated!';
-          
+
       if (!lock.isEnabled && shouldEnable) {
         message = '${lock.appName} schedule updated and auto-enabled.';
       }
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
@@ -1432,16 +1733,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         children: [
           // 메인 콘텐츠
           Padding(
-            padding: const EdgeInsets.only(bottom: 240), // 하단 바 공간 확보 (Ad + Nav)
+            padding: const EdgeInsets.only(
+              bottom: 240,
+            ), // 하단 바 공간 확보 (Ad + Nav)
             child: Column(
               children: [
                 Expanded(
-                  child: _selectedIndex == 0 ? _buildCurrentLocksTab() : _buildScheduledLocksTab(),
+                  child: _selectedIndex == 0
+                      ? _buildCurrentLocksTab()
+                      : _buildScheduledLocksTab(),
                 ),
               ],
             ),
           ),
-          
+
           // 하단 네비게이션 및 추가 버튼
           Positioned(
             left: 0,
@@ -1459,7 +1764,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                       children: [
                         // Add Lock Button (Show only on current lock tab or always)
                         // Floating above the bottom bar
-                        if (_selectedIndex != 2) // When not in Phone Lock screen
+                        if (_selectedIndex !=
+                            2) // When not in Phone Lock screen
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16),
                             child: SizedBox(
@@ -1467,14 +1773,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                               height: 56,
                               child: ElevatedButton(
                                 onPressed: () {
-                                   if (_selectedIndex == 0) {
-                                     _selectAppsFirst();
-                                   } else if (_selectedIndex == 1) {
-                                     _addScheduledLock();
-                                   }
+                                  if (_selectedIndex == 0) {
+                                    _selectAppsFirst();
+                                  } else if (_selectedIndex == 1) {
+                                    _addScheduledLock();
+                                  }
                                 },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF9FE801), // Lime Green
+                                  backgroundColor: const Color(
+                                    0xFF9FE801,
+                                  ), // Lime Green
                                   foregroundColor: Colors.black,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
@@ -1509,16 +1817,28 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
-                              _buildBottomTabButton(0, AppLocalizations.of(context)!.nowLock, 'nowlock'),
-                              _buildBottomTabButton(1, AppLocalizations.of(context)!.scheduleLock, 'schedule'),
-                              _buildBottomTabButton(2, AppLocalizations.of(context)!.phoneLock, 'phonelock'),
+                              _buildBottomTabButton(
+                                0,
+                                AppLocalizations.of(context)!.nowLock,
+                                'nowlock',
+                              ),
+                              _buildBottomTabButton(
+                                1,
+                                AppLocalizations.of(context)!.scheduleLock,
+                                'schedule',
+                              ),
+                              _buildBottomTabButton(
+                                2,
+                                AppLocalizations.of(context)!.phoneLock,
+                                'phonelock',
+                              ),
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  
+
                   // Ad Banner
                   if (_isBannerAdReady)
                     Container(
@@ -1534,13 +1854,89 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          
+
           // Loading Overlay
           if (_isLoading)
             Container(
               color: Colors.white,
-              child: const Center(
-                child: CircularProgressIndicator(color: Color(0xFF9FE801)),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Color(0xFF9FE801)),
+                    const SizedBox(height: 16),
+                    Text(
+                      _loadingStatus,
+                      style: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: 14,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Error Overlay
+          if (_initError != null)
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: Colors.red,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'App Initialization Failed',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: SingleChildScrollView(
+                        child: Text(
+                          _initError!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black87,
+                          ),
+                          textAlign: TextAlign.left,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _initError = null;
+                          _isLoading = true;
+                        });
+                        _init();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -1552,14 +1948,21 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     final isSelected = _selectedIndex == index;
     // Phone Lock button has no separate selection state, executes or shows state on tap
     // But displayed as 3rd tab in UI
-    
+
     // Determine Icon
     String iconPath;
-    if (index == 2) { // Phone Lock
-      final isPhoneLocked = lockedApps.any((app) => app.packageName == AppConstants.phoneLockPackageName);
-      iconPath = isPhoneLocked ? 'assets/icon/phonelocktrue.svg' : 'assets/icon/phonelockfalse.svg';
+    if (index == 2) {
+      // Phone Lock
+      final isPhoneLocked = lockedApps.any(
+        (app) => app.packageName == AppConstants.phoneLockPackageName,
+      );
+      iconPath = isPhoneLocked
+          ? 'assets/icon/phonelocktrue.svg'
+          : 'assets/icon/phonelockfalse.svg';
     } else {
-      iconPath = isSelected ? 'assets/icon/${iconPrefix}true.svg' : 'assets/icon/${iconPrefix}false.svg';
+      iconPath = isSelected
+          ? 'assets/icon/${iconPrefix}true.svg'
+          : 'assets/icon/${iconPrefix}false.svg';
     }
 
     return GestureDetector(
@@ -1599,7 +2002,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   style: TextStyle(
                     fontSize: 12,
                     color: isSelected ? Colors.white : Colors.grey,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
                   ),
                 ),
               ],
@@ -1663,18 +2068,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   String _formatRemainingTime(BuildContext context, Duration duration) {
     if (duration.isNegative) return AppLocalizations.of(context)!.unlocked;
-    
+
     final local = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    
+
     final h = duration.inHours;
     final m = duration.inMinutes % 60;
     final s = duration.inSeconds % 60;
-    
+
     String hPart = '';
     String mPart = '';
     String sPart = '';
-    
+
     if (h > 0) {
       hPart = isKo ? '$h${local.hours}' : '$h ${local.hours}';
       if (m > 0) {
@@ -1694,142 +2099,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   Widget _buildCurrentLocksTab() {
     return Column(
-        children: [
-          // 제목
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                lockedApps.isEmpty ? 'No Locked Apps' : '${lockedApps.length} Apps Locked',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-              ),
-            ),
-          ),
-          // 앱 목록
-          Expanded(
-            child: lockedApps.isEmpty
-                ? Center(
-                    child: Text(
-                      'Press "Add Lock" to start',
-                      style: TextStyle(color: Colors.grey.shade400),
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: lockedApps.length,
-                    itemBuilder: (context, index) {
-                      final app = lockedApps[index];
-                      final remainingTime =
-                          app.unlockTime.difference(DateTime.now());
-
-                      return ListTile(
-                        leading: SizedBox(
-                          width: 40,
-                          height: 40,
-                          child: app.packageName == AppConstants.phoneLockPackageName
-                              ? Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: Colors.green,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.all(8),
-                                  child: SvgPicture.asset(
-                                    'assets/icon/Devices/phone.svg',
-                                    width: 24,
-                                    height: 24,
-                                  ),
-                                )
-                              : app.iconBytes != null
-                                  ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    app.iconBytes!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) =>
-                                        Icon(app.icon, color: Colors.green),
-                                  ),
-                                )
-                              : Icon(app.icon, color: Colors.green),
-                        ),
-                        title: Text(
-                          app.name,
-                          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          _formatRemainingTime(context, remainingTime),
-                          style: TextStyle(
-                            color: remainingTime.isNegative
-                                ? Colors.green
-                                : Colors.orange,
-                          ),
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(
-                            Icons.delete_forever,
-                            color: Colors.redAccent,
-                          ),
-                          tooltip: 'Unlock Forcefully',
-                          onPressed: () async {
-                            final confirm = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                backgroundColor: Colors.white,
-                                title: const Text('Unlock Confirmation', style: TextStyle(color: Colors.black)),
-                                content: const Text(
-                                  'Are you sure you want to forcefully unlock this app?\n(For testing and emergency use)',
-                                  style: TextStyle(color: Colors.black87),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
-                                    child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () => Navigator.pop(context, true),
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                    child: const Text('Unlock', style: TextStyle(color: Colors.white)),
-                                  ),
-                                ],
-                              ),
-                            );
-
-                            if (confirm == true) {
-                              await _removeLockedApp(index);
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Lock for ${app.name} has been released.'),
-                                    backgroundColor: Colors.red.shade700,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          // Button removed (replaced by Add Lock button)
-        ],
-      );
-  }
-
-  Widget _buildScheduledLocksTab() {
-    return Column(
       children: [
+        // 제목
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              scheduledLocks.isEmpty ? 'No Scheduled Locks' : '${scheduledLocks.length} Scheduled',
+              lockedApps.isEmpty
+                  ? 'No Locked Apps'
+                  : '${lockedApps.length} Apps Locked',
               style: const TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -1838,7 +2117,152 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ),
           ),
         ),
-        // 예약 잠금 강제 종료 금지 안내 제거됨 (사용자 요청)
+        // 앱 목록
+        Expanded(
+          child: lockedApps.isEmpty
+              ? Center(
+                  child: Text(
+                    'Press "Add Lock" to start',
+                    style: TextStyle(color: Colors.grey.shade400),
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: lockedApps.length,
+                  itemBuilder: (context, index) {
+                    final app = lockedApps[index];
+                    final remainingTime = app.unlockTime.difference(
+                      DateTime.now(),
+                    );
+
+                    // [UI Update] iOS Locked Apps Design
+                    final isIosGroup = app.packageName == 'ios_selected_apps';
+                    String displayName = app.name;
+                    if (isIosGroup && app.name.contains('•')) {
+                      try {
+                        final count = app.name.split('•').last.trim();
+                        displayName = '$count apps locked';
+                      } catch (_) {}
+                    }
+
+                    return ListTile(
+                      leading: SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: isIosGroup
+                            ? Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.redAccent.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.lock_outline,
+                                  color: Colors.redAccent,
+                                ),
+                              )
+                            : app.packageName ==
+                                  AppConstants.phoneLockPackageName
+                            ? Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.green,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                padding: const EdgeInsets.all(8),
+                                child: SvgPicture.asset(
+                                  'assets/icon/Devices/phone.svg',
+                                  width: 24,
+                                  height: 24,
+                                ),
+                              )
+                            : app.iconBytes != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(
+                                  app.iconBytes!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Icon(app.icon, color: Colors.green),
+                                ),
+                              )
+                            : Icon(app.icon, color: Colors.green),
+                      ),
+                      title: Text(
+                        displayName,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      subtitle: Text(
+                        _formatRemainingTime(context, remainingTime),
+                        style: TextStyle(
+                          color: remainingTime.isNegative
+                              ? Colors.green
+                              : Colors.orange,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+        // Button removed (replaced by Add Lock button)
+      ],
+    );
+  }
+
+  Widget _buildScheduledLocksTab() {
+    // Check if any instant lock is active
+    final bool isInstantLockActive = lockedApps.any(
+      (app) => app.unlockTime.isAfter(DateTime.now()),
+    );
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              scheduledLocks.isEmpty
+                  ? 'No Scheduled Locks'
+                  : '${scheduledLocks.length} Scheduled',
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
+              ),
+            ),
+          ),
+        ),
+
+        if (isInstantLockActive)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.lock_clock, color: Colors.orange.shade800),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Schedules are disabled while Instant Lock is running.',
+                    style: TextStyle(
+                      color: Colors.orange.shade900,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         if (scheduledLocks.isNotEmpty) const SizedBox(height: 12),
         Expanded(
@@ -1853,102 +2277,138 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   itemCount: scheduledLocks.length,
                   itemBuilder: (context, index) {
                     final lock = scheduledLocks[index];
-                    final weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                    final weekdayNames = [
+                      'Mon',
+                      'Tue',
+                      'Wed',
+                      'Thu',
+                      'Fri',
+                      'Sat',
+                      'Sun',
+                    ];
                     final selectedDays = lock.weekdays
                         .map((w) => weekdayNames[w - 1])
                         .join(', ');
 
-                    final isPhoneLock = lock.packageName == AppConstants.phoneLockPackageName;
+                    final isPhoneLock =
+                        lock.packageName == AppConstants.phoneLockPackageName;
 
-                    return ListTile(
-                      leading: SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: isPhoneLock
-                            ? Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.green,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.all(8),
-                                child: SvgPicture.asset(
-                                   'assets/icon/Devices/phone.svg',
-                                   width: 24,
-                                   height: 24,
-                                 ),
-                              )
-                            : lock.iconBytes != null
-                                ? ClipRRect(
+                    // Determine if this item should be disabled
+                    final bool isItemDisabled = isInstantLockActive;
+
+                    return Opacity(
+                      opacity: isItemDisabled ? 0.5 : 1.0,
+                      child: ListTile(
+                        leading: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: isPhoneLock
+                              ? Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.green,
                                     borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      lock.iconBytes!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) =>
-                                          const Icon(Icons.schedule, color: Colors.orange),
-                                    ),
-                                  )
-                                : const Icon(Icons.schedule, color: Colors.orange),
-                      ),
-                      title: Text(
-                        lock.appName,
-                        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                      ),
-                      subtitle: Text(
-                        '$selectedDays\n${lock.hour.toString().padLeft(2, '0')}:${lock.minute.toString().padLeft(2, '0')} - ${lock.durationMinutes}m duration',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                      trailing: CupertinoSwitch(
-                        value: lock.isEnabled,
-                        onChanged: (bool value) async {
-                          setState(() {
-                            scheduledLocks[index] = ScheduledLock(
-                              appName: lock.appName,
-                              packageName: lock.packageName,
-                              weekdays: lock.weekdays,
-                              hour: lock.hour,
-                              minute: lock.minute,
-                              durationMinutes: lock.durationMinutes,
-                              strictMode: lock.strictMode,
-                              isEnabled: value,
-                              lastExecutedDate: lock.lastExecutedDate,
-                              iconBytes: lock.iconBytes,
-                            );
-                          });
-                          await _saveScheduledLocks();
+                                  ),
+                                  padding: const EdgeInsets.all(8),
+                                  child: SvgPicture.asset(
+                                    'assets/icon/Devices/phone.svg',
+                                    width: 24,
+                                    height: 24,
+                                  ),
+                                )
+                              : lock.iconBytes != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    lock.iconBytes!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            const Icon(
+                                              Icons.schedule,
+                                              color: Colors.orange,
+                                            ),
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.schedule,
+                                  color: Colors.orange,
+                                ),
+                        ),
+                        title: Text(
+                          lock.appName,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '$selectedDays\n${lock.hour.toString().padLeft(2, '0')}:${lock.minute.toString().padLeft(2, '0')} - ${lock.durationMinutes}m duration',
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                        trailing: CupertinoSwitch(
+                          value: lock.isEnabled,
+                          onChanged: isItemDisabled
+                              ? null
+                              : (bool value) async {
+                                  setState(() {
+                                    scheduledLocks[index] = ScheduledLock(
+                                      appName: lock.appName,
+                                      packageName: lock.packageName,
+                                      weekdays: lock.weekdays,
+                                      hour: lock.hour,
+                                      minute: lock.minute,
+                                      durationMinutes: lock.durationMinutes,
+                                      strictMode: lock.strictMode,
+                                      isEnabled: value,
+                                      lastExecutedDate: lock.lastExecutedDate,
+                                      iconBytes: lock.iconBytes,
+                                    );
+                                  });
+                                  await _saveScheduledLocks();
 
-                          if (value) {
-                            await _scheduleAlarm(scheduledLocks[index]);
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('${lock.appName} Enabled.'),
-                                  duration: const Duration(seconds: 1),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                            }
-                          } else {
-                            await _cancelAlarm(scheduledLocks[index]);
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('${lock.appName} Disabled.'),
-                                  duration: const Duration(seconds: 1),
-                                  backgroundColor: Colors.grey,
-                                ),
-                              );
-                            }
-                          }
-                        },
+                                  if (value) {
+                                    await _scheduleAlarm(scheduledLocks[index]);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '${lock.appName} Enabled.',
+                                          ),
+                                          duration: const Duration(seconds: 1),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                  } else {
+                                    await _cancelAlarm(scheduledLocks[index]);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '${lock.appName} Disabled.',
+                                          ),
+                                          duration: const Duration(seconds: 1),
+                                          backgroundColor: Colors.grey,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                        ),
+                        onTap: isItemDisabled
+                            ? null
+                            : () => _editScheduledLock(index),
                       ),
-                      onTap: () => _editScheduledLock(index),
                     );
                   },
                 ),
         ),
-        // 하단 버튼 제거 (Add Lock 버튼으로 대체)
       ],
     );
   }
@@ -1957,17 +2417,36 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     // Step 1: Select App
     try {
       if (Platform.isIOS) {
-        // iOS permission check (AuthStatus)
-        final bool? authStatus = await platform.invokeMethod('checkAuthStatus');
-        if (authStatus != true) {
-           await platform.invokeMethod('requestAuthorization');
-           return;
+        // [iOS] Step 1: Open App Picker first
+        final dynamic picked = await platform.invokeMethod('showAppPicker');
+
+        if (picked == null ||
+            (picked != true &&
+                (picked is! Map ||
+                    ((picked['apps'] ?? 0) +
+                            (picked['categories'] ?? 0) +
+                            (picked['domains'] ?? 0)) ==
+                        0))) {
+          // User cancelled or selected nothing
+          return;
         }
-        
-        // iOS fixed to "Selected Apps" without app selection
+
         if (!mounted) return;
 
-        // Calculate existing scheduled weekdays
+        // Use generic name for iOS
+        final int total = (picked is Map)
+            ? ((picked['apps'] ?? 0) +
+                  (picked['categories'] ?? 0) +
+                  (picked['domains'] ?? 0))
+            : 0;
+        final String appName = total > 0
+            ? 'Selected Apps (iOS) • $total'
+            : 'Selected Apps (iOS)';
+        final String packageName = 'ios_selected_apps';
+
+        // [iOS] Step 2: Schedule Settings
+        // iOS allows overlapping schedules for different app groups, but here we treat them as one group 'ios_selected_apps'
+        // So we still pass disabledWeekdays to prevent overlapping on the SAME group
         final occupiedWeekdays = scheduledLocks
             .where((lock) => lock.packageName == 'ios_selected_apps')
             .expand((lock) => lock.weekdays)
@@ -1975,53 +2454,50 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final scheduleData = await Navigator.push<Map<String, dynamic>>(
           context,
-          MaterialPageRoute(builder: (context) => ScheduleLockScreen(
-            disabledWeekdays: occupiedWeekdays,
-          )),
+          MaterialPageRoute(
+            builder: (context) =>
+                ScheduleLockScreen(disabledWeekdays: occupiedWeekdays),
+          ),
         );
 
         if (scheduleData == null) return;
 
-        // Step 3: Add Schedule
-        setState(() {
-          scheduledLocks.add(ScheduledLock(
-            appName: 'Selected Apps (iOS)',
-            packageName: 'ios_selected_apps',
-            weekdays: scheduleData['weekdays'],
-            hour: scheduleData['hour'],
-            minute: scheduleData['minute'],
-            durationMinutes: scheduleData['duration'],
-            strictMode: scheduleData['strictMode'] ?? false,
-          ));
-        });
+        // 3. Add Schedule
+        final newLock = ScheduledLock(
+          appName: appName,
+          packageName: packageName,
+          weekdays: scheduleData['weekdays'],
+          hour: scheduleData['hour'],
+          minute: scheduleData['minute'],
+          durationMinutes: scheduleData['duration'],
+          strictMode: scheduleData['strictMode'] ?? false,
+          iconBytes: null, // iOS icons not available
+        );
 
-        // Alarm registration (Skipped for iOS as AlarmManager is not supported, relies on Timer)
-        if (Platform.isAndroid) {
-          await _scheduleAlarm(scheduledLocks.last);
-        }
-
-        await _saveScheduledLocks();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('iOS Schedule Lock added! (Works only when app is running)'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
+        await _saveAndActivateSchedule(newLock);
         return;
       }
 
-      final bool? hasPermissions = await platform.invokeMethod('checkPermissions');
+      // [Android] Existing Logic
+      final bool? hasPermissions = await platform.invokeMethod(
+        'checkPermissions',
+      );
       if (hasPermissions != true) {
         if (!mounted) return;
         final result = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Permission Required', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              'Permission Required',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             content: const Text(
               'Usage Access permission is required for Scheduled Lock.',
               style: TextStyle(color: Colors.black87),
@@ -2029,11 +2505,17 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
               TextButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('Settings', style: TextStyle(color: Colors.blue)),
+                child: const Text(
+                  'Settings',
+                  style: TextStyle(color: Colors.blue),
+                ),
               ),
             ],
           ),
@@ -2046,14 +2528,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       }
 
       if (!mounted) return;
-      
+
       // Show loading dialog
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => AlertDialog(
           backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           content: Row(
             children: [
               const SizedBox(
@@ -2065,18 +2549,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(width: 16),
-              const Text('Loading apps...', style: TextStyle(color: Colors.black87)),
+              const Text(
+                'Loading apps...',
+                style: TextStyle(color: Colors.black87),
+              ),
             ],
           ),
         ),
       );
 
       try {
-        final List<dynamic>? apps = await platform.invokeMethod('getInstalledApps').timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => null,
-        );
-        
+        final List<dynamic>? apps = await platform
+            .invokeMethod('getInstalledApps')
+            .timeout(const Duration(seconds: 10), onTimeout: () => null);
+
         if (!mounted) return;
         Navigator.pop(context); // Close loading dialog
 
@@ -2095,14 +2581,15 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
-          builder: (context) => SingleAppSelectorBottomSheet(apps: filteredApps),
+          builder: (context) =>
+              SingleAppSelectorBottomSheet(apps: filteredApps),
         );
 
         if (selectedApp == null) return;
 
         // Step 2: Select Weekday, Hour, Minute
         if (!mounted) return;
-        
+
         // Calculate existing scheduled weekdays
         final occupiedWeekdays = scheduledLocks
             .where((lock) => lock.packageName == selectedApp['packageName'])
@@ -2111,112 +2598,43 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
         final scheduleData = await Navigator.push<Map<String, dynamic>>(
           context,
-          MaterialPageRoute(builder: (context) => ScheduleLockScreen(
-            disabledWeekdays: occupiedWeekdays,
-          )),
+          MaterialPageRoute(
+            builder: (context) =>
+                ScheduleLockScreen(disabledWeekdays: occupiedWeekdays),
+          ),
         );
 
         if (scheduleData == null) return;
 
-        // Step 3: Prepare to add schedule
+        // Step 3: Add Schedule
+        final dynamic iconData = selectedApp['icon'];
+        Uint8List? iconBytes;
+        if (iconData is Uint8List) {
+          iconBytes = iconData;
+        } else if (iconData is String) {
+          iconBytes = base64Decode(iconData);
+        }
+
         final newLock = ScheduledLock(
-            appName: selectedApp['appName'] as String,
-            packageName: selectedApp['packageName'] as String,
-            weekdays: scheduleData['weekdays'],
-            hour: scheduleData['hour'],
-            minute: scheduleData['minute'],
-            durationMinutes: scheduleData['duration'],
-            strictMode: scheduleData['strictMode'] ?? false,
-            iconBytes: selectedApp['icon'] as Uint8List?,
+          appName: selectedApp['appName'] ?? 'Unknown App',
+          packageName: selectedApp['packageName'],
+          weekdays: scheduleData['weekdays'],
+          hour: scheduleData['hour'],
+          minute: scheduleData['minute'],
+          durationMinutes: scheduleData['duration'],
+          strictMode: scheduleData['strictMode'] ?? false,
+          iconBytes: iconBytes,
         );
 
-        // Immediate lock warning popup (if current time is within schedule) - Confirm before saving
-        bool shouldProceed = true;
-        if (mounted && newLock.isEnabled) {
-          final now = DateTime.now();
-          final currentMinutes = now.hour * 60 + now.minute;
-          final startMinutes = newLock.hour * 60 + newLock.minute;
-          final endMinutes = startMinutes + newLock.durationMinutes;
-          
-          if (newLock.weekdays.contains(now.weekday) && 
-              currentMinutes >= startMinutes && 
-              currentMinutes < endMinutes) {
-              
-              shouldProceed = await showDialog<bool>(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => AlertDialog(
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  title: const Text('⚠️ Immediate Lock Warning', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                  content: const Text(
-                    'The scheduled time includes the current time.\nClicking Confirm will start the lock immediately.\nIf you cancel, the schedule will not be saved.',
-                    style: TextStyle(color: Colors.black87),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: const Text('Confirm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-              ) ?? false;
-          }
-        }
-
-        if (!shouldProceed) {
-             if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Schedule addition cancelled.'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
-          }
-          return;
-        }
-
-        // Confirmed: Save and Schedule
-        setState(() {
-          scheduledLocks.add(newLock);
-        });
-
-        // Register Alarm
-        await _scheduleAlarm(newLock);
-
-        await _saveScheduledLocks();
-        
-        // Immediately check if the newly added schedule applies to current time
-        // (e.g. Current 17:40, Set 17:40 Start -> Immediate lock should trigger)
-        _checkMissedScheduledLocks();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${selectedApp['appName']} Schedule Lock added!'),
-              backgroundColor: Colors.orange.shade700,
-            ),
-          );
-        }
+        await _saveAndActivateSchedule(newLock);
       } catch (e) {
+        print('Error in _addScheduledLock flow: $e');
         if (!mounted) return;
-        // Close loading dialog if open
-        try {
-          Navigator.pop(context);
-        } catch (_) {}
-        
-        print('Error loading app list: $e');
+        // Loading dialog is already closed above, so no need to pop here.
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to load app list: $e'),
+            content: Text('Failed to add schedule: $e'),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -2224,10 +2642,154 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     } catch (e) {
       print('Error adding scheduled lock: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
+  }
+
+  // Common Helper to Save and Activate Schedule
+  Future<void> _saveAndActivateSchedule(ScheduledLock newLock) async {
+    // Validate that the app name is not empty or default placeholder if selection was cancelled
+    if (newLock.packageName == 'ios_selected_apps' &&
+        newLock.appName == 'Selected Apps (iOS)') {
+      // Double check: if total count is 0, it means empty selection
+      // However, we rely on the upstream check.
+      // But for safety:
+      // (Actually, the check `picked['apps'] == 0` above handles this, but let's be sure)
+    }
+
+    // Immediate lock warning popup (if current time is within schedule) - Confirm before saving
+    bool shouldProceed = true;
+    if (mounted && newLock.isEnabled) {
+      final now = DateTime.now();
+      final currentMinutes = now.hour * 60 + now.minute;
+      final startMinutes = newLock.hour * 60 + newLock.minute;
+      final endMinutes = startMinutes + newLock.durationMinutes;
+
+      if (newLock.weekdays.contains(now.weekday) &&
+          currentMinutes >= startMinutes &&
+          currentMinutes < endMinutes) {
+        shouldProceed =
+            await showDialog<bool>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                backgroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: const Text(
+                  '⚠️ Immediate Lock Warning',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: const Text(
+                  'The scheduled time includes the current time.\nClicking Confirm will start the lock immediately.\nIf you cancel, the schedule will not be saved.',
+                  style: TextStyle(color: Colors.black87),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Confirm',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+      }
+    }
+
+    if (!shouldProceed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Schedule cancelled.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Confirmed: Save and Schedule
+    SchedulerBinding.instance.addPostFrameCallback((_) async {
+      try {
+        print('=== Adding Scheduled Lock ===');
+        if (!mounted) return;
+
+        // 1. Update List
+        setState(() {
+          scheduledLocks.add(newLock);
+        });
+        print('Added to list. Total: ${scheduledLocks.length}');
+
+        // 2. Save to Disk (Async)
+        await _saveScheduledLocks();
+        print('Saved to disk.');
+
+        // 3. Register Alarm (Async with Timeout)
+        if (Platform.isAndroid) {
+          // Use Future.microtask to not block UI
+          Future.microtask(() async {
+            try {
+              await _scheduleAlarm(newLock).timeout(
+                const Duration(seconds: 3),
+                onTimeout: () {
+                  print('Alarm schedule timed out - skipping');
+                },
+              );
+            } catch (e) {
+              print('Alarm error: $e');
+            }
+          });
+        }
+
+        // 4. Check for Immediate Execution
+        if (mounted) {
+          _checkMissedScheduledLocks();
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${newLock.appName} scheduled. (Starts at ${newLock.hour}:${newLock.minute.toString().padLeft(2, '0')})',
+              ),
+              backgroundColor: Colors.grey.shade800,
+            ),
+          );
+        }
+      } catch (e) {
+        print('Error in _saveAndActivateSchedule: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error saving schedule: $e')));
+        }
+      }
+    });
   }
 }
 
@@ -2236,7 +2798,8 @@ class AppSelectorBottomSheet extends StatefulWidget {
   final List<dynamic> apps;
   final Set<String> lockedPackageNames;
 
-  const AppSelectorBottomSheet({super.key, 
+  const AppSelectorBottomSheet({
+    super.key,
     required this.apps,
     this.lockedPackageNames = const {},
   });
@@ -2272,13 +2835,13 @@ class _AppSelectorBottomSheetState extends State<AppSelectorBottomSheet> {
         filteredApps = List.from(widget.apps);
       } else {
         final queryLower = query.toLowerCase();
-        
+
         filteredApps = widget.apps.where((app) {
           final name = (app['name'] ?? '').toString().toLowerCase();
-          
+
           // Normal Search
           if (name.contains(queryLower)) return true;
-          
+
           return false;
         }).toList();
       }
@@ -2329,10 +2892,7 @@ class _AppSelectorBottomSheetState extends State<AppSelectorBottomSheet> {
                     ),
                     Text(
                       '${selectedIndices.length} Selected',
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontSize: 14,
-                      ),
+                      style: const TextStyle(color: Colors.grey, fontSize: 14),
                     ),
                   ],
                 ),
@@ -2349,7 +2909,10 @@ class _AppSelectorBottomSheetState extends State<AppSelectorBottomSheet> {
                     prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
                     suffixIcon: searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: Icon(Icons.clear, color: Colors.grey.shade400),
+                            icon: Icon(
+                              Icons.clear,
+                              color: Colors.grey.shade400,
+                            ),
                             onPressed: () {
                               _filterApps('');
                             },
@@ -2380,117 +2943,130 @@ class _AppSelectorBottomSheetState extends State<AppSelectorBottomSheet> {
                         itemCount: filteredApps.length,
                         itemBuilder: (context, index) {
                           final app = filteredApps[index];
-                          final packageName = app['packageName'] as String? ?? '';
-                          final isLocked = widget.lockedPackageNames.contains(packageName);
-                          
+                          final packageName =
+                              app['packageName'] as String? ?? '';
+                          final isLocked = widget.lockedPackageNames.contains(
+                            packageName,
+                          );
+
                           // Find original index
                           final originalIndex = widget.apps.indexWhere(
-                            (a) => a['packageName'] == packageName
+                            (a) => a['packageName'] == packageName,
                           );
-                          final isSelected = selectedIndices.contains(originalIndex);
+                          final isSelected = selectedIndices.contains(
+                            originalIndex,
+                          );
 
-                    return ListTile(
-                      leading: Stack(
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: isLocked
-                                  ? Colors.grey.withOpacity(0.2)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: app['icon'] != null
-                                ? ClipRRect(
+                          return ListTile(
+                            leading: Stack(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: isLocked
+                                        ? Colors.grey.withOpacity(0.2)
+                                        : Colors.transparent,
                                     borderRadius: BorderRadius.circular(10),
-                                    child: Image.memory(
-                                      app['icon'] as Uint8List,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) =>
-                                          Icon(
-                                        Icons.apps,
-                                        color: isLocked ? Colors.grey : Colors.green,
+                                  ),
+                                  child: app['icon'] != null
+                                      ? ClipRRect(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          child: Image.memory(
+                                            app['icon'] as Uint8List,
+                                            fit: BoxFit.cover,
+                                            errorBuilder:
+                                                (context, error, stackTrace) =>
+                                                    Icon(
+                                                      Icons.apps,
+                                                      color: isLocked
+                                                          ? Colors.grey
+                                                          : Colors.green,
+                                                    ),
+                                          ),
+                                        )
+                                      : Icon(
+                                          Icons.apps,
+                                          color: isLocked
+                                              ? Colors.grey
+                                              : Colors.green,
+                                        ),
+                                ),
+                                if (isLocked)
+                                  Positioned(
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.red,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.lock,
+                                        size: 12,
+                                        color: Colors.white,
                                       ),
                                     ),
-                                  )
-                                : Icon(
-                                    Icons.apps,
-                                    color: isLocked ? Colors.grey : Colors.green,
                                   ),
-                          ),
-                          if (isLocked)
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                padding: const EdgeInsets.all(2),
-                                decoration: const BoxDecoration(
-                                  color: Colors.red,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.lock,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
+                              ],
+                            ),
+                            title: Text(
+                              app['name'] ?? 'Unknown',
+                              style: TextStyle(
+                                color: isLocked ? Colors.grey : Colors.black,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                               ),
                             ),
-                        ],
+                            subtitle: isLocked
+                                ? const Text(
+                                    '🔒 Locked',
+                                    style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 12,
+                                    ),
+                                  )
+                                : null,
+                            trailing: Checkbox(
+                              value: isSelected,
+                              activeColor: Colors.green,
+                              onChanged: isLocked
+                                  ? null // Locked apps cannot be selected
+                                  : (value) {
+                                      setState(() {
+                                        if (value == true) {
+                                          selectedIndices.add(originalIndex);
+                                        } else {
+                                          selectedIndices.remove(originalIndex);
+                                        }
+                                      });
+                                    },
+                            ),
+                            onTap: isLocked
+                                ? null // Locked apps cannot be tapped
+                                : () {
+                                    setState(() {
+                                      if (isSelected) {
+                                        selectedIndices.remove(originalIndex);
+                                      } else {
+                                        selectedIndices.add(originalIndex);
+                                      }
+                                    });
+                                  },
+                          );
+                        },
                       ),
-                      title: Text(
-                        app['name'] ?? 'Unknown',
-                        style: TextStyle(
-                          color: isLocked ? Colors.grey : Colors.black,
-                          fontWeight: isSelected
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                      ),
-                      subtitle: isLocked
-                          ? const Text(
-                              '🔒 Locked',
-                              style: TextStyle(color: Colors.redAccent, fontSize: 12),
-                            )
-                          : null,
-                      trailing: Checkbox(
-                        value: isSelected,
-                        activeColor: Colors.green,
-                        onChanged: isLocked
-                            ? null  // Locked apps cannot be selected
-                            : (value) {
-                                setState(() {
-                                  if (value == true) {
-                                    selectedIndices.add(originalIndex);
-                                  } else {
-                                    selectedIndices.remove(originalIndex);
-                                  }
-                                });
-                              },
-                      ),
-                      onTap: isLocked
-                          ? null  // Locked apps cannot be tapped
-                          : () {
-                              setState(() {
-                                if (isSelected) {
-                                  selectedIndices.remove(originalIndex);
-                                } else {
-                                  selectedIndices.add(originalIndex);
-                                }
-                              });
-                            },
-                    );
-                  },
-                ),
               ),
               // Bottom Buttons
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  border: Border(
-                    top: BorderSide(color: Colors.grey.shade200),
-                  ),
+                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
                 ),
                 child: SafeArea(
                   child: Row(
@@ -2499,8 +3075,7 @@ class _AppSelectorBottomSheetState extends State<AppSelectorBottomSheet> {
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(context),
                           style: ElevatedButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 15),
+                            padding: const EdgeInsets.symmetric(vertical: 15),
                             backgroundColor: Colors.grey.shade200,
                             foregroundColor: Colors.black,
                             shape: RoundedRectangleBorder(
@@ -2517,19 +3092,21 @@ class _AppSelectorBottomSheetState extends State<AppSelectorBottomSheet> {
                               ? null
                               : () {
                                   final selected = selectedIndices
-                                      .map((i) => {
-                                            'appName': widget.apps[i]['name']
-                                                as String,
-                                            'packageName': widget.apps[i]
-                                                ['packageName'] as String,
-                                            'icon': widget.apps[i]['icon'],
-                                          })
+                                      .map(
+                                        (i) => {
+                                          'appName':
+                                              widget.apps[i]['name'] as String,
+                                          'packageName':
+                                              widget.apps[i]['packageName']
+                                                  as String,
+                                          'icon': widget.apps[i]['icon'],
+                                        },
+                                      )
                                       .toList();
                                   Navigator.pop(context, selected);
                                 },
                           style: ElevatedButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 15),
+                            padding: const EdgeInsets.symmetric(vertical: 15),
                             backgroundColor: selectedIndices.isEmpty
                                 ? Colors.grey.shade300
                                 : Colors.green,
@@ -2573,17 +3150,17 @@ class __TimePickerDialogState extends State<_TimePickerDialog> {
     final m = totalMinutes % 60;
     final local = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    
+
     String hPart = '';
     String mPart = '';
-    
+
     if (h > 0) {
       hPart = isKo ? '$h${local.hours}' : '$h ${local.hours}';
     }
     if (m > 0 || h == 0) {
       mPart = isKo ? '$m${local.minutes}' : '$m ${local.minutes}';
     }
-    
+
     if (h > 0 && m > 0) {
       return '$hPart $mPart';
     } else if (h > 0) {
@@ -2598,46 +3175,54 @@ class __TimePickerDialogState extends State<_TimePickerDialog> {
     final m = totalMinutes % 60;
     final local = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    
+
     List<InlineSpan> spans = [];
-    
+
     // Style for numbers (Large)
     final numberStyle = const TextStyle(
       color: Colors.green,
       fontSize: 32,
       fontWeight: FontWeight.bold,
     );
-    
+
     // Style for text (Small)
     final textStyle = const TextStyle(
       color: Colors.green,
-      fontSize: 18, 
+      fontSize: 18,
       fontWeight: FontWeight.bold,
     );
 
     if (h > 0) {
       spans.add(TextSpan(text: '$h', style: numberStyle));
-      spans.add(TextSpan(text: isKo ? local.hours : ' ${local.hours}', style: textStyle));
+      spans.add(
+        TextSpan(
+          text: isKo ? local.hours : ' ${local.hours}',
+          style: textStyle,
+        ),
+      );
       if (m > 0) {
         spans.add(const TextSpan(text: ' '));
       }
     }
-    
+
     if (m > 0 || h == 0) {
       spans.add(TextSpan(text: '$m', style: numberStyle));
-      spans.add(TextSpan(text: isKo ? local.minutes : ' ${local.minutes}', style: textStyle));
+      spans.add(
+        TextSpan(
+          text: isKo ? local.minutes : ' ${local.minutes}',
+          style: textStyle,
+        ),
+      );
     }
-    
-    return Text.rich(
-      TextSpan(children: spans),
-      textAlign: TextAlign.center,
-    );
+
+    return Text.rich(TextSpan(children: spans), textAlign: TextAlign.center);
   }
 
   String _formatEndTime(BuildContext context, int totalMinutes) {
     final now = DateTime.now();
     final end = now.add(Duration(minutes: totalMinutes));
-    final timeStr = '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
+    final timeStr =
+        '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}';
     return AppLocalizations.of(context)!.endsAt(timeStr);
   }
 
@@ -2648,7 +3233,10 @@ class __TimePickerDialogState extends State<_TimePickerDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Text(
         AppLocalizations.of(context)!.setDuration,
-        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        style: const TextStyle(
+          color: Colors.black,
+          fontWeight: FontWeight.bold,
+        ),
       ),
       content: SingleChildScrollView(
         child: Column(
@@ -2658,17 +3246,16 @@ class __TimePickerDialogState extends State<_TimePickerDialog> {
             const SizedBox(height: 4),
             Text(
               _formatEndTime(context, selectedMinutes),
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
             ),
             const SizedBox(height: 20),
             Slider(
               value: selectedMinutes.toDouble(),
               min: AppConstants.minLockDurationMinutes.toDouble(),
               max: AppConstants.maxLockDurationMinutes.toDouble(),
-              divisions: AppConstants.maxLockDurationMinutes - AppConstants.minLockDurationMinutes,
+              divisions:
+                  AppConstants.maxLockDurationMinutes -
+                  AppConstants.minLockDurationMinutes,
               activeColor: Colors.green,
               inactiveColor: Colors.grey.shade300,
               label: _formatDuration(context, selectedMinutes),
@@ -2686,37 +3273,33 @@ class __TimePickerDialogState extends State<_TimePickerDialog> {
             Wrap(
               spacing: 10,
               runSpacing: 10,
-              children: AppConstants.quickTimeOptions
-                  .map(
-                    (mins) {
-                      final isSelected = selectedMinutes == mins;
-                      return ElevatedButton(
-                        onPressed: () {
-                          HapticFeedback.selectionClick();
-                          setState(() {
-                            selectedMinutes = mins;
-                          });
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isSelected
-                              ? Colors.green
-                              : Colors.grey.shade200,
-                          foregroundColor: isSelected
-                              ? Colors.white
-                              : Colors.black,
-                          elevation: 0,
-                        ),
-                        child: Text(
-                          _formatDuration(context, mins),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                      );
-                    },
-                  )
-                  .toList(),
+              children: AppConstants.quickTimeOptions.map((mins) {
+                final isSelected = selectedMinutes == mins;
+                return ElevatedButton(
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      selectedMinutes = mins;
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isSelected
+                        ? Colors.green
+                        : Colors.grey.shade200,
+                    foregroundColor: isSelected ? Colors.white : Colors.black,
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    _formatDuration(context, mins),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
           ],
         ),
@@ -2731,11 +3314,16 @@ class __TimePickerDialogState extends State<_TimePickerDialog> {
         ),
         ElevatedButton(
           onPressed: () {
-            widget.onConfirm(selectedMinutes, false); // isStrictMode always false
+            widget.onConfirm(
+              selectedMinutes,
+              false,
+            ); // isStrictMode always false
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.green,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           child: const Text(
             'Confirm',
@@ -2754,10 +3342,12 @@ class SingleAppSelectorBottomSheet extends StatefulWidget {
   const SingleAppSelectorBottomSheet({super.key, required this.apps});
 
   @override
-  State<SingleAppSelectorBottomSheet> createState() => _SingleAppSelectorBottomSheetState();
+  State<SingleAppSelectorBottomSheet> createState() =>
+      _SingleAppSelectorBottomSheetState();
 }
 
-class _SingleAppSelectorBottomSheetState extends State<SingleAppSelectorBottomSheet> {
+class _SingleAppSelectorBottomSheetState
+    extends State<SingleAppSelectorBottomSheet> {
   String searchQuery = '';
   List<dynamic> filteredApps = [];
 
@@ -2783,12 +3373,12 @@ class _SingleAppSelectorBottomSheetState extends State<SingleAppSelectorBottomSh
         filteredApps = List.from(widget.apps);
       } else {
         final queryLower = query.toLowerCase();
-        
+
         filteredApps = widget.apps.where((app) {
           final name = (app['name'] ?? '').toString().toLowerCase();
-          
+
           if (name.contains(queryLower)) return true;
-          
+
           return false;
         }).toList();
       }
@@ -2842,7 +3432,10 @@ class _SingleAppSelectorBottomSheetState extends State<SingleAppSelectorBottomSh
                     prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
                     suffixIcon: searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: Icon(Icons.clear, color: Colors.grey.shade400),
+                            icon: Icon(
+                              Icons.clear,
+                              color: Colors.grey.shade400,
+                            ),
                             onPressed: () {
                               _filterApps('');
                             },
@@ -2872,46 +3465,54 @@ class _SingleAppSelectorBottomSheetState extends State<SingleAppSelectorBottomSh
                         itemCount: filteredApps.length,
                         itemBuilder: (context, index) {
                           final app = filteredApps[index];
-                    return ListTile(
-                      leading: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: app['icon'] != null
-                            ? ClipRRect(
+                          return ListTile(
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.transparent,
                                 borderRadius: BorderRadius.circular(10),
-                                child: Image.memory(
-                                  app['icon'] as Uint8List,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      Container(
-                                        color: Colors.orange.withOpacity(0.2),
-                                        child: const Icon(Icons.apps, color: Colors.orange),
-                                      ),
-                                ),
-                              )
-                            : Container(
-                                color: Colors.orange.withOpacity(0.2),
-                                child: const Icon(Icons.apps, color: Colors.orange),
                               ),
+                              child: app['icon'] != null
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: Image.memory(
+                                        app['icon'] as Uint8List,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Container(
+                                                  color: Colors.orange
+                                                      .withOpacity(0.2),
+                                                  child: const Icon(
+                                                    Icons.apps,
+                                                    color: Colors.orange,
+                                                  ),
+                                                ),
+                                      ),
+                                    )
+                                  : Container(
+                                      color: Colors.orange.withOpacity(0.2),
+                                      child: const Icon(
+                                        Icons.apps,
+                                        color: Colors.orange,
+                                      ),
+                                    ),
+                            ),
+                            title: Text(
+                              app['name'] ?? 'Unknown',
+                              style: const TextStyle(color: Colors.black),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context, {
+                                'appName': app['name'] as String,
+                                'packageName': app['packageName'] as String,
+                                'icon': app['icon'],
+                              });
+                            },
+                          );
+                        },
                       ),
-                      title: Text(
-                        app['name'] ?? 'Unknown',
-                        style: const TextStyle(color: Colors.black),
-                      ),
-                      onTap: () {
-                        Navigator.pop(context, {
-                          'appName': app['name'] as String,
-                          'packageName': app['packageName'] as String,
-                          'icon': app['icon'],
-                        });
-                      },
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -2932,7 +3533,8 @@ class ScheduleLockScreen extends StatefulWidget {
   final bool isPhoneLockMode;
   final List<int> disabledWeekdays;
 
-  const ScheduleLockScreen({super.key, 
+  const ScheduleLockScreen({
+    super.key,
     this.initialWeekdays,
     this.initialHour,
     this.initialMinute,
@@ -2952,11 +3554,11 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
   late int selectedHour;
   late int selectedMinute;
   late int selectedDuration;
-  
+
   // For Phone Lock Mode (End Time)
   late int selectedEndHour;
   late int selectedEndMinute;
-  
+
   late bool isStrictMode;
   late bool isEditing;
   static const platform = MethodChannel('com.jimoon.jamgltime/app_blocker');
@@ -2965,20 +3567,21 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
   void initState() {
     super.initState();
     final now = DateTime.now();
-    
+
     // 수정 모드일 때만 기존 값 사용하고, 새로 생성(초기화)일 때는 현재 시간 사용
     if (widget.initialHour != null && widget.initialMinute != null) {
       isEditing = true;
       selectedWeekdays = Set.from(widget.initialWeekdays ?? {});
       selectedHour = widget.initialHour!;
       selectedMinute = widget.initialMinute!;
-      selectedDuration = widget.initialDuration ?? AppConstants.defaultScheduledDuration;
-      
+      selectedDuration =
+          widget.initialDuration ?? AppConstants.defaultScheduledDuration;
+
       // 최소 시간 보정 (기존 데이터 호환성)
       if (selectedDuration < AppConstants.minLockDurationMinutes) {
         selectedDuration = AppConstants.minLockDurationMinutes;
       }
-      
+
       isStrictMode = widget.initialStrictMode;
     } else {
       isEditing = false;
@@ -2987,28 +3590,42 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
       selectedWeekdays = Set.from(widget.initialWeekdays ?? {});
       selectedHour = initTime.hour;
       selectedMinute = initTime.minute;
-      selectedDuration = widget.initialDuration ?? AppConstants.defaultScheduledDuration;
+      selectedDuration =
+          widget.initialDuration ?? AppConstants.defaultScheduledDuration;
       isStrictMode = false;
     }
-    
+
     // Initialize End Time based on Start Time + Duration
-    final startDateTime = DateTime(now.year, now.month, now.day, selectedHour, selectedMinute);
+    final startDateTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      selectedHour,
+      selectedMinute,
+    );
     final endDateTime = startDateTime.add(Duration(minutes: selectedDuration));
     selectedEndHour = endDateTime.hour;
     selectedEndMinute = endDateTime.minute;
   }
 
-
   @override
   Widget build(BuildContext context) {
     final weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Text(widget.isPhoneLockMode ? 'Phone Lock Settings' : 'Schedule Lock Settings', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: Text(
+          widget.isPhoneLockMode
+              ? 'Phone Lock Settings'
+              : 'Schedule Lock Settings',
+          style: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.close, color: Colors.black),
           onPressed: () => Navigator.pop(context),
@@ -3022,17 +3639,34 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                   context: context,
                   builder: (context) => AlertDialog(
                     backgroundColor: Colors.white,
-                    title: const Text('Delete Confirmation', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                    content: const Text('Are you sure you want to delete this schedule?', style: TextStyle(color: Colors.black87)),
+                    title: const Text(
+                      'Delete Confirmation',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    content: const Text(
+                      'Are you sure you want to delete this schedule?',
+                      style: TextStyle(color: Colors.black87),
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.grey),
+                        ),
                       ),
                       ElevatedButton(
                         onPressed: () => Navigator.pop(context, true),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                        child: const Text('Delete', style: TextStyle(color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        child: const Text(
+                          'Delete',
+                          style: TextStyle(color: Colors.white),
+                        ),
                       ),
                     ],
                   ),
@@ -3066,15 +3700,20 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                         ),
                         child: const Text(
                           '💡 This app is currently locked. Modifications will apply from the next schedule, keeping the current lock active.',
-                          style: TextStyle(
-                            color: Colors.orange,
-                            fontSize: 13,
-                          ),
+                          style: TextStyle(color: Colors.orange, fontSize: 13),
                         ),
                       ),
-                      
+
+                    // [UI] Selected App Display
                     // 요일 선택
-                    const Text('Select Weekdays:', style: TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Select Weekdays:',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     Container(
                       decoration: BoxDecoration(
@@ -3087,51 +3726,65 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                         children: List.generate(7, (index) {
                           final weekday = index + 1;
                           final isSelected = selectedWeekdays.contains(weekday);
-                          final isDisabled = widget.disabledWeekdays.contains(weekday);
-                          
+                          final isDisabled = widget.disabledWeekdays.contains(
+                            weekday,
+                          );
+
                           return GestureDetector(
-                            onTap: isDisabled ? () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('This weekday is already occupied by another schedule for this app.'),
-                                  duration: Duration(seconds: 1),
-                                ),
-                              );
-                            } : () {
-                              HapticFeedback.selectionClick();
-                              setState(() {
-                                if (isSelected) {
-                                  selectedWeekdays.remove(weekday);
-                                } else {
-                                  selectedWeekdays.add(weekday);
-                                }
-                              });
-                            },
+                            onTap: isDisabled
+                                ? () {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'This weekday is already occupied by another schedule for this app.',
+                                        ),
+                                        duration: Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                : () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() {
+                                      if (isSelected) {
+                                        selectedWeekdays.remove(weekday);
+                                      } else {
+                                        selectedWeekdays.add(weekday);
+                                      }
+                                    });
+                                  },
                             child: Container(
                               width: 40,
                               height: 40,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: isDisabled 
-                                    ? Colors.grey.shade300 
-                                    : (isSelected ? Colors.orange : Colors.transparent),
+                                color: isDisabled
+                                    ? Colors.grey.shade300
+                                    : (isSelected
+                                          ? Colors.orange
+                                          : Colors.transparent),
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: isDisabled 
-                                      ? Colors.grey.shade400 
-                                      : (isSelected ? Colors.orange : Colors.grey.shade400),
+                                  color: isDisabled
+                                      ? Colors.grey.shade400
+                                      : (isSelected
+                                            ? Colors.orange
+                                            : Colors.grey.shade400),
                                   width: 1.5,
                                 ),
                               ),
                               child: Text(
                                 weekdayNames[index],
                                 style: TextStyle(
-                                  color: isDisabled 
-                                      ? Colors.grey.shade500 
-                                      : (isSelected ? Colors.white : Colors.grey.shade600),
+                                  color: isDisabled
+                                      ? Colors.grey.shade500
+                                      : (isSelected
+                                            ? Colors.white
+                                            : Colors.grey.shade600),
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
-                                  decoration: isDisabled ? TextDecoration.lineThrough : null,
+                                  decoration: isDisabled
+                                      ? TextDecoration.lineThrough
+                                      : null,
                                 ),
                               ),
                             ),
@@ -3140,9 +3793,16 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // 시간 선택
-                    const Text('Start Time:', style: TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Start Time:',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     Container(
                       height: 200,
@@ -3181,9 +3841,16 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // 종료 시간 (모든 모드에서 사용)
-                    const Text('End Time:', style: TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'End Time:',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     Container(
                       height: 200,
@@ -3225,7 +3892,7 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                 ),
               ),
             ),
-            
+
             // 하단 확인 버튼
             Container(
               padding: const EdgeInsets.all(20),
@@ -3243,25 +3910,26 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                           // 시작 시간 보정 로직 제거 (사용자 요청: 현재 시간도 즉시 잠금 가능하게)
                           int adjustedHour = selectedHour;
                           int adjustedMinute = selectedMinute;
-                          
+
                           int duration = 0;
-                          
+
                           // 모든 모드에서 시작/종료 시간으로 duration 계산
                           int startMinutes = adjustedHour * 60 + adjustedMinute;
-                          int endMinutes = selectedEndHour * 60 + selectedEndMinute;
-                          
+                          int endMinutes =
+                              selectedEndHour * 60 + selectedEndMinute;
+
                           if (endMinutes <= startMinutes) {
                             // 다음날로 넘어감 (종료 시간이 시작 시간보다 이르거나 같으면 다음날로 간주)
                             endMinutes += 24 * 60;
                           }
-                          
+
                           duration = endMinutes - startMinutes;
-                          
+
                           // 최소 시간 보정
                           if (duration < AppConstants.minLockDurationMinutes) {
                             duration = AppConstants.minLockDurationMinutes;
                           }
-                      
+
                           Navigator.pop(context, {
                             'weekdays': selectedWeekdays.toList(),
                             'hour': adjustedHour,
@@ -3273,11 +3941,17 @@ class _ScheduleLockScreenState extends State<ScheduleLockScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: selectedWeekdays.isEmpty
                         ? Colors.grey.shade300
-                        : (widget.isPhoneLockMode ? Colors.green : Colors.orange), // 폰 잠금은 녹색
+                        : (widget.isPhoneLockMode
+                              ? Colors.green
+                              : Colors.orange), // 폰 잠금은 녹색
                   ),
                   child: const Text(
                     'Confirm',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
@@ -3296,7 +3970,8 @@ class PermissionDialog extends StatefulWidget {
   State<PermissionDialog> createState() => _PermissionDialogState();
 }
 
-class _PermissionDialogState extends State<PermissionDialog> with WidgetsBindingObserver {
+class _PermissionDialogState extends State<PermissionDialog>
+    with WidgetsBindingObserver {
   static const platform = MethodChannel('com.jimoon.jamgltime/app_blocker');
   Map<String, bool> _status = {
     'usage': false,
@@ -3344,95 +4019,131 @@ class _PermissionDialogState extends State<PermissionDialog> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text(
-        'Required Permissions',
-        style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-      ),
-      content: _isLoading
-          ? const SizedBox(height: 100, child: Center(child: CircularProgressIndicator()))
-          : SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!_allGranted)
-                    const Text(
-                      'Please grant the following permissions for the app to work correctly.\nTap each button to open Settings.',
-                      style: TextStyle(color: Colors.black54, fontSize: 14),
-                    )
-                  else
-                    const Text(
-                      'All permissions granted.\nTap Confirm to start.',
-                      style: TextStyle(color: Colors.green, fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  const SizedBox(height: 24),
-                  if (_status['usage'] == false) ...[
-                    _PermissionRow(
-                      icon: Icons.pie_chart_outline,
-                      title: 'Usage Access',
-                      subtitle: 'Required to detect running apps and block them.',
-                      buttonLabel: 'Grant',
-                      onTap: () => platform.invokeMethod('openPermissionScreen', {'type': 'usage'}),
-                    ),
-                    const SizedBox(height: 16),
+    // Prevent dialog from being closed by back button
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Required Permissions',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
+        content: _isLoading
+            ? const SizedBox(
+                height: 100,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!_allGranted)
+                      const Text(
+                        'Please grant the following permissions for the app to work correctly.\nTap each button to open Settings.',
+                        style: TextStyle(color: Colors.black54, fontSize: 14),
+                      )
+                    else
+                      const Text(
+                        'All permissions granted.\nTap Confirm to start.',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    const SizedBox(height: 24),
+                    if (_status['usage'] == false) ...[
+                      _PermissionRow(
+                        icon: Icons.pie_chart_outline,
+                        title: 'Usage Access',
+                        subtitle:
+                            'Required to detect running apps and block them.',
+                        buttonLabel: 'Grant',
+                        onTap: () => platform.invokeMethod(
+                          'openPermissionScreen',
+                          {'type': 'usage'},
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_status['overlay'] == false) ...[
+                      _PermissionRow(
+                        icon: Icons.layers,
+                        title: 'Display Over Other Apps',
+                        subtitle: 'Required to show the block screen.',
+                        buttonLabel: 'Grant',
+                        onTap: () => platform.invokeMethod(
+                          'openPermissionScreen',
+                          {'type': 'overlay'},
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_status['alarm'] == false) ...[
+                      _PermissionRow(
+                        icon: Icons.alarm,
+                        title: 'Alarms & Reminders',
+                        subtitle: 'Required for accurate scheduled locking.',
+                        buttonLabel: 'Grant',
+                        onTap: () => platform.invokeMethod(
+                          'openPermissionScreen',
+                          {'type': 'alarm'},
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (_status['notification'] == false) ...[
+                      _PermissionRow(
+                        icon: Icons.notifications_active,
+                        title: 'Push Notifications',
+                        subtitle:
+                            'Get notified immediately when your lock ends! 🔔',
+                        buttonLabel: 'Grant',
+                        onTap: () async {
+                          final status = await Permission.notification
+                              .request();
+                          if (status.isPermanentlyDenied) {
+                            platform.invokeMethod('openPermissionScreen', {
+                              'type': 'notification',
+                            });
+                          }
+                          // Update UI
+                          _checkPermissions();
+                        },
+                      ),
+                    ],
                   ],
-                  if (_status['overlay'] == false) ...[
-                    _PermissionRow(
-                      icon: Icons.layers,
-                      title: 'Display Over Other Apps',
-                      subtitle: 'Required to show the block screen.',
-                      buttonLabel: 'Grant',
-                      onTap: () => platform.invokeMethod('openPermissionScreen', {'type': 'overlay'}),
+                ),
+              ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              if (_allGranted) {
+                Navigator.pop(context);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('permissions_checked', true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'You must grant all permissions to use the app.',
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (_status['alarm'] == false) ...[
-                    _PermissionRow(
-                      icon: Icons.alarm,
-                      title: 'Alarms & Reminders',
-                      subtitle: 'Required for accurate scheduled locking.',
-                      buttonLabel: 'Grant',
-                      onTap: () => platform.invokeMethod('openPermissionScreen', {'type': 'alarm'}),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (_status['notification'] == false) ...[
-                    _PermissionRow(
-                      icon: Icons.notifications_active,
-                      title: 'Push Notifications',
-                      subtitle: 'Required for lock/unlock notifications.',
-                      buttonLabel: 'Grant',
-                      onTap: () => platform.invokeMethod('openPermissionScreen', {'type': 'notification'}),
-                    ),
-                  ],
-                ],
+                  ),
+                );
+              }
+            },
+            child: Text(
+              'Confirm',
+              style: TextStyle(
+                color: _allGranted ? Colors.green : Colors.grey,
+                fontWeight: FontWeight.bold,
               ),
             ),
-      actions: [
-        TextButton(
-          onPressed: () async {
-            if (_allGranted) {
-               Navigator.pop(context);
-               final prefs = await SharedPreferences.getInstance();
-               await prefs.setBool('permissions_checked', true);
-            } else {
-               ScaffoldMessenger.of(context).showSnackBar(
-                 const SnackBar(content: Text('You must grant all permissions to use the app.')),
-               );
-            }
-          },
-          child: Text(
-            'Confirm',
-            style: TextStyle(
-              color: _allGranted ? Colors.green : Colors.grey,
-              fontWeight: FontWeight.bold,
-            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -3487,15 +4198,25 @@ class _PermissionRow extends StatelessWidget {
                 const SizedBox(height: 10),
                 OutlinedButton.icon(
                   onPressed: onTap,
-                  icon: const Icon(Icons.settings, size: 18, color: Colors.green),
+                  icon: const Icon(
+                    Icons.settings,
+                    size: 18,
+                    color: Colors.green,
+                  ),
                   label: Text(
                     buttonLabel,
-                    style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.green,
                     side: const BorderSide(color: Colors.green),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ],
@@ -3526,12 +4247,12 @@ class LockedApp {
   });
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'unlockTime': unlockTime.millisecondsSinceEpoch,
-        'packageName': packageName,
-        'strictMode': strictMode,
-        'iconBase64': iconBytes != null ? base64Encode(iconBytes!) : null,
-      };
+    'name': name,
+    'unlockTime': unlockTime.millisecondsSinceEpoch,
+    'packageName': packageName,
+    'strictMode': strictMode,
+    'iconBase64': iconBytes != null ? base64Encode(iconBytes!) : null,
+  };
 
   factory LockedApp.fromJson(Map<String, dynamic> json) {
     // 하위 호환성: String(ISO8601) 또는 int(timestamp) 모두 처리
@@ -3591,17 +4312,17 @@ class ScheduledLock {
   });
 
   Map<String, dynamic> toJson() => {
-        'appName': appName,
-        'packageName': packageName,
-        'weekdays': weekdays,
-        'hour': hour,
-        'minute': minute,
-        'durationMinutes': durationMinutes,
-        'strictMode': strictMode,
-        'isEnabled': isEnabled,
-        'lastExecutedDate': lastExecutedDate?.toIso8601String(),
-        'iconBase64': iconBytes != null ? base64Encode(iconBytes!) : null,
-      };
+    'appName': appName,
+    'packageName': packageName,
+    'weekdays': weekdays,
+    'hour': hour,
+    'minute': minute,
+    'durationMinutes': durationMinutes,
+    'strictMode': strictMode,
+    'isEnabled': isEnabled,
+    'lastExecutedDate': lastExecutedDate?.toIso8601String(),
+    'iconBase64': iconBytes != null ? base64Encode(iconBytes!) : null,
+  };
 
   factory ScheduledLock.fromJson(Map<String, dynamic> json) {
     Uint8List? decodedIcon;
@@ -3614,19 +4335,21 @@ class ScheduledLock {
     }
 
     return ScheduledLock(
-        appName: json['appName'] ?? 'Unknown',
-        packageName: json['packageName'] ?? '',
-        weekdays: (json['weekdays'] as List<dynamic>).map((e) => e as int).toList(),
-        hour: json['hour'] ?? 0,
-        minute: json['minute'] ?? 0,
-        durationMinutes: json['durationMinutes'] ?? 30,
-        strictMode: json['strictMode'] ?? false,
-        isEnabled: json['isEnabled'] ?? true,
-        lastExecutedDate: json['lastExecutedDate'] != null 
-            ? DateTime.parse(json['lastExecutedDate'] as String)
-            : null,
-        iconBytes: decodedIcon,
-      );
+      appName: json['appName'] ?? 'Unknown',
+      packageName: json['packageName'] ?? '',
+      weekdays: (json['weekdays'] as List<dynamic>)
+          .map((e) => e as int)
+          .toList(),
+      hour: json['hour'] ?? 0,
+      minute: json['minute'] ?? 0,
+      durationMinutes: json['durationMinutes'] ?? 30,
+      strictMode: json['strictMode'] ?? false,
+      isEnabled: json['isEnabled'] ?? true,
+      lastExecutedDate: json['lastExecutedDate'] != null
+          ? DateTime.parse(json['lastExecutedDate'] as String)
+          : null,
+      iconBytes: decodedIcon,
+    );
   }
 
   // copyWith 메서드 추가

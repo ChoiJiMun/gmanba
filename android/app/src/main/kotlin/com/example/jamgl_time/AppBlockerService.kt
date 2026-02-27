@@ -309,8 +309,16 @@ class AppBlockerService : Service() {
         try {
             val currentPackage = getForegroundAppViaUsageStats()
             if (currentPackage.isEmpty()) return
-            if (currentPackage == "kr.jamgltime.app") {
-                lastBlockedPackage = ""
+            
+            // DEBUG LOG
+            println("Foreground Check: current=$currentPackage, myPackage=$packageName, blocked=${blockedApps.keys}")
+
+            // Prevent self-blocking (Explicit & Dynamic)
+            if (currentPackage == packageName || currentPackage == "kr.jamgltime.app") {
+                if (lastBlockedPackage.isNotEmpty()) {
+                     hideOverlay()
+                     lastBlockedPackage = ""
+                }
                 return
             }
             
@@ -400,24 +408,7 @@ class AppBlockerService : Service() {
                 setPadding(0, 0, 0, 60)
             }
 
-            val unlockButton = Button(this).apply {
-                text = getString(R.string.emergency_unlock)
-                textSize = 18f
-                setBackgroundColor(Color.parseColor("#FF4444"))
-                setTextColor(Color.WHITE)
-                setOnClickListener {
-                    if (lastBlockedPackage.isNotEmpty()) {
-                        blockedApps.remove(lastBlockedPackage)
-                        saveBlockedApps()
-                        showUnlockNotification(getString(R.string.emergency_unlocked_title), getString(R.string.emergency_unlocked_msg))
-                    }
-                    hideOverlay()
-                    lastBlockedPackage = ""
-                }
-            }
-
             layout.addView(messageView)
-            layout.addView(unlockButton)
             
             overlayView = layout
 
@@ -481,30 +472,8 @@ class AppBlockerService : Service() {
                 }
             }
 
-            val unlockButton = Button(this).apply {
-                text = getString(R.string.emergency_unlock)
-                textSize = 18f
-                setBackgroundColor(Color.parseColor("#FF4444"))
-                setTextColor(Color.WHITE)
-                setOnClickListener {
-                    // 현재 예약 구간 종료 시점까지 폰 잠금을 재시작하지 않도록 억제 플래그 설정
-                    suppressPhoneLockUntilEndTime()
-                    showUnlockNotification(getString(R.string.emergency_unlocked_title), getString(R.string.emergency_unlocked_msg))
-                    hidePhoneLockOverlay()
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
-            }
-            val buttonParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 60, 0, 0)
-            }
-
             layout.addView(title)
             layout.addView(countdownCircle)
-            layout.addView(unlockButton, buttonParams)
             
             phoneLockOverlayView = layout
             val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

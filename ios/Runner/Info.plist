@@ -48,6 +48,8 @@
 	<key>NSFamilyControlsUsageDescription</key>
 	<string>This app temporarily blocks selected apps to help manage focus time.</string>
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<string>ca-app-pub-5359935982195695~9592647775</string>
+	<key>GADAdMobAppID</key>
+	<string>AIzaSyBhN--WK3kXhML7_iyc5tl47Ux8eJJpjQg</string>
 </dict>
 </plist>
